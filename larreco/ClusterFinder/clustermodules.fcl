@@ -19,6 +19,17 @@ standard_trajcluster:
   MakeTrackSpacePoints: true
 } # standard_trajcluster
 
+standard_tcoptimizer:
+{
+  module_type:          "TCOptimizer"
+  TrajClusterAlg:       @local::standard_trajclusteralg
+  HitModuleLabel:       "gaushit"
+  FclVarNames: ["HitErrFac"]  # The TrajClusterAlg fcl configuration variable to optimize
+  PrintLevel: 0   # only print the final results at job end
+  MinTruHitsInPlane: 3 # Ignore MCParticles having less than MinTruHitsInPlane
+  WeightOption: 0   # 0 = weight by MCParticle, 1 = weight by # of true hits in the plane
+}
+
 standard_blurredcluster:
 {
  module_type:              "BlurredClustering"

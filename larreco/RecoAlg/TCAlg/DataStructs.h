@@ -449,14 +449,12 @@ namespace tca {
     float maxChi;
     const geo::GeometryCore* geom;
     calo::CalorimetryAlg* caloAlg;
-    TMVA::Reader* showerParentReader;
-    std::vector<float> showerParentVars;
     float hitErrFac;
     float maxWireSkipNoSignal;   ///< max number of wires to skip w/o a signal on them
     float maxWireSkipWithSignal; ///< max number of wires to skip with a signal on them
     float projectionErrFactor;
     float VLAStepSize;
-    float JTMaxHitSep2;      /// Max hit separation for making junk trajectories. < 0 to turn off
+    float JTMaxHitSep;      /// Max hit separation for making junk trajectories. < 0 to turn off
     std::bitset<128> useAlg; ///< Allow user to mask off specific algorithms
     std::bitset<128> dbgAlg; ///< Allow user to turn on debug printing in algorithms (that print...)
     short recoSlice{0};      ///< only reconstruct the slice with ID (0 = all)

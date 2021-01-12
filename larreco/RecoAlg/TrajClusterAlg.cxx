@@ -25,9 +25,8 @@ namespace tca {
   //------------------------------------------------------------------------------
 
   TrajClusterAlg::TrajClusterAlg(fhicl::ParameterSet const& pset)
-    : fCaloAlg(pset.get<fhicl::ParameterSet>("CaloAlg")), fMVAReader("Silent")
+    : fCaloAlg(pset.get<fhicl::ParameterSet>("CaloAlg"))
   {
-    tcc.showerParentReader = &fMVAReader;
 
     bool badinput = false;
     // set all configurable modes false
@@ -63,7 +62,7 @@ namespace tca {
     tcc.maxWireSkipWithSignal = pset.get<float>("MaxWireSkipWithSignal", 100);
     tcc.projectionErrFactor = pset.get<float>("ProjectionErrFactor", 2);
     tcc.VLAStepSize = pset.get<float>("VLAStepSize", 1.5);
-    tcc.JTMaxHitSep2 = pset.get<float>("JTMaxHitSep", 2);
+    tcc.JTMaxHitSep = pset.get<float>("JTMaxHitSep", 2);
     tcc.deltaRayTag = pset.get<std::vector<short>>("DeltaRayTag", {-1, -1, -1});
     tcc.muonTag = pset.get<std::vector<short>>("MuonTag", {-1, -1, -1, -1});
     if (pset.has_key("ElectronTag")) tcc.electronTag = pset.get<std::vector<float>>("ElectronTag");
@@ -81,7 +80,6 @@ namespace tca {
     // don't produce neutrino PFParticles, etc unless desired
     tcc.modes[kModeNeutrino] = pset.get<bool>("NeutrinoMode", false);
     pset.get_if_present<std::vector<float>>("NeutralVxCuts", tcc.neutralVxCuts);
-    if (tcc.JTMaxHitSep2 > 0) tcc.JTMaxHitSep2 *= tcc.JTMaxHitSep2;
 
     // in the following section we ensure that the fcl vectors are appropriately sized so that later references are valid
     if (tcc.minPtsFit.size() != tcc.minPts.size()) badinput = true;
@@ -666,8 +664,6 @@ namespace tca {
     LastEndMerge(slc, inCTP);
     // make junk trajectories using nearby un-assigned hits
     FindJunkTraj(slc, inCTP);
-    // Merge junk Tjs with junk Tjs
-    MergeJunk(slc, inCTP);
     // Merge short Tjs into junk Tjs
     MergeShortWithJunk(slc, inCTP);
     // dressed muons with halo trajectories
@@ -726,7 +722,7 @@ namespace tca {
   {
     // Makes junk trajectories using unassigned hits
 
-    if (tcc.JTMaxHitSep2 <= 0) return;
+    if (tcc.JTMaxHitSep <= 0) return;
     if (!tcc.useAlg[kJunkTj]) return;
     unsigned short plane = DecodeCTP(inCTP).Plane;
     if ((int)slc.lastWire[plane] - 3 < (int)slc.firstWire[plane]) return;
@@ -736,6 +732,9 @@ namespace tca {
       if (slHit.InTraj < 0) slHit.InTraj = 0;
 
     bool prt = false;
+    float maxHitSep2 = tcc.JTMaxHitSep * tcc.JTMaxHitSep;
+    // inflate by ~1.5 for induction planes
+//    if (plane < slc.nPlanes) maxHitSep2 *= 2;
 
     std::vector<unsigned int> tHits;
     // Stay well away from the last wire in the plane
@@ -771,7 +770,7 @@ namespace tca {
           if (prt && HitSep2(slc, iht, jht) < 100)
             mf::LogVerbatim("TC") << " use " << PrintHit(jslHit) << " hitSep2 "
                                   << HitSep2(slc, iht, jht);
-          if (HitSep2(slc, iht, jht) > tcc.JTMaxHitSep2) continue;
+          if (HitSep2(slc, iht, jht) > maxHitSep2) continue;
           std::vector<unsigned int> jHits;
           if(tcc.useAlg[kNewCuts]) {
             jHits = FindJTHits(slc, jht);
@@ -877,8 +876,9 @@ namespace tca {
     int wire = hit.WireID().Wire;
     std::array<int, 2> wireWindow = {wire, wire};
     Point2_t timeWindow;
+    // TODO: check symmetric timeWindow
     timeWindow[0] = hit.PeakTime() * tcc.unitsPerTick;
-    timeWindow[1] = timeWindow[0] + sqrt(tcc.JTMaxHitSep2);
+    timeWindow[1] = timeWindow[0] + tcc.JTMaxHitSep;
     bool hitsNear = false;
     auto closeHits = FindCloseHits(slc, wireWindow, timeWindow, plane, kUnusedHits, true, hitsNear);
     if(closeHits.empty()) return closeHits;

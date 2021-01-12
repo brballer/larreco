@@ -1309,6 +1309,7 @@ namespace tca {
   {
     // Version of TrajHitsOK that uses hit separation instead of tick overlap
     // on adjacent wires
+    float maxHitSep2 = tcc.JTMaxHitSep * tcc.JTMaxHitSep;
     for (auto& iht : iHitsInMultiplet) {
       auto const& ihit = (*evt.allHits)[slc.slHits[iht].allHitsIndex];
       Point2_t ipos;
@@ -1319,7 +1320,7 @@ namespace tca {
         Point2_t jpos;
         jpos[0] = jhit.WireID().Wire;
         jpos[1] = jhit.PeakTime() * tcc.unitsPerTick;
-        if(PosSep2(ipos, jpos) < tcc.JTMaxHitSep2) return true;
+        if(PosSep2(ipos, jpos) < maxHitSep2) return true;
       } // jht
     } // iht
     return false;

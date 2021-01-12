@@ -30,8 +30,6 @@ namespace detinfo {
   class DetectorPropertiesData;
 }
 
-// ROOT libraries
-#include "TMVA/Reader.h"
 class TTree;
 
 namespace tca {
@@ -107,7 +105,6 @@ namespace tca {
     TTree* showertree;
 
     calo::CalorimetryAlg fCaloAlg;
-    TMVA::Reader fMVAReader;
 
     std::vector<unsigned int> fAlgModCount;
 

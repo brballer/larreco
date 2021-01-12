@@ -44,7 +44,6 @@ namespace tca {
   // Make a junk trajectory using the list of hits in tHits
   bool MakeJunkTraj(TCSlice& slc, std::vector<unsigned int> tHits);
   void MergeShortWithJunk(TCSlice& slc, CTP_t inCTP);
-  void MergeJunk(TCSlice& slc, CTP_t inCTP);
   void ChkChgAsymmetry(TCSlice& slc, Trajectory& tj, bool prt);
   void TagShowerLike(TCSlice& slc, const CTP_t& inCTP);
 } // namespace

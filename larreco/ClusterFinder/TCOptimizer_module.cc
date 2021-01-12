@@ -2,6 +2,25 @@
 // Class:       TCOptimizer
 // Plugin Type: analyzer (art v3_05_01)
 // File:        TCOptimizer_module.cc
+// 
+// Optimizes the settings of several important TrajClusterAlg FCL variables
+// by reconstructing a user-defined data set multiple times with different
+// variable values. The reconstruction performance (Efficiency * Purity)
+// for each variable value is averaged over MCParticles in each TPC and
+// plane for all events. Recommended FCL variable settings are given after all
+// events have been processed.
+//
+// Notes: 
+// 1) Events are reconstructed 4 - 8 times for each FCL variable.
+// 2) Correlations between variables are generally negligible.
+// 3) The recommendations should be credible after processing
+//    several thousand MCParticles.
+// 4) The TrajCluster module produces a new hit collection by merging the
+//    input hits that are used in a single trajectory point. This final step
+//    is not done here since it would require (a CPU-intensive) MC-matching
+//    of the merged hits on each iteration.
+// 5) TrajClusterAlg 3D reconstruction is less important than 2D reconstruction
+//    and is therefore disabled in this module 
 //
 // Generated at Thu Dec 17 11:45:43 2020 by Bruce Baller using cetskelgen
 // from cetlib version v3_10_00.
@@ -34,13 +53,30 @@ namespace tco {
   class TCOptimizer;
 
   struct MatchStruct {
-    int G4TrkID {INT_MAX};
-    std::vector<float> nTruHits {0};
-    std::vector<int> TjIDs {0};
+    int G4TrkID {INT_MAX};                ///< Geant4 TrackID for this MCParticle
+    std::vector<float> nTruHits {0};      ///< number of MC-matched hits in each plane
+    std::vector<int> TjIDs {0};           ///< ID of a trajectory matched to this MCParticle
     std::vector<float> nRecoHits {0};     ///< count of MC-matched hits used in the Tj
     std::vector<float> nTruRecoHits {0};  ///< count of the correct MC-matched hits used in the Tj
   };
 
+  // variables that can be optimized by this module have an enumerated ID whose names
+  // identify variable names in the TrajClusterAlg TCConfig struct in 
+  // larreco/RecoAlg/TCAlg/DataStructs.h. All variables are floats but some are
+  // elements of a vector, i.e. kKinkCuts0 identifies tca::tcc.kinkCuts[0]
+  typedef enum {
+    kMultHitSep,
+    kHitEffFac,
+    kKinkCuts0,
+    kKinkCuts1,
+    kKinkCuts2,
+    kAngleRanges0,
+    kMaxChi,
+    kMaxWireSkipNoSignal,
+    kJTMaxHitSep
+  } VarID_t;
+
+  // struct for accumulating performance metric averages for each variable value
   struct SumStruct {
     unsigned short parent {0};  /// The index of the FltVarStruct
     float value {0};          ///< the fcl variable setting
@@ -48,24 +84,13 @@ namespace tco {
     float epSum {0};          ///< Sum of EP values for all events in the job
   };
 
-    typedef enum {
-      kHitEffFac,
-      kKinkCuts0,
-      kKinkCuts1,
-      kKinkCuts2,
-      kAngleRanges0,
-      kMaxChi,
-      kMaxWireSkipNoSignal,
-      kProjectionErrFactor
-    } VarID_t;
-
-  // struct for a TrajClusterAlg (TCA) float fcl variable
+  // struct for a TrajClusterAlg float fcl variable
   struct FltVarStruct {
     std::string varName;
     VarID_t varID;
-    float *ptr;             ///< pointer to the TCA fcl variable
+    float *ptr;             ///< pointer to the variable in fTCAlg
     float startValue;          ///< fcl variable value at the start of the job
-    std::vector<SumStruct> ss;  ///< EP count and sum for each value
+    std::vector<SumStruct> ss;  ///< EP count and sum after reconstructing with a certain value
   };
 
   class TCOptimizer : public art::EDAnalyzer {
@@ -76,7 +101,7 @@ namespace tco {
     TCOptimizer& operator=(TCOptimizer const&) = delete;
     TCOptimizer& operator=(TCOptimizer&&) = delete;
 
-    bool Initialize();
+    void Initialize();
     void Restore();
     void analyze(art::Event const& e) override;
 
@@ -88,8 +113,9 @@ namespace tco {
     art::InputTag fInputHitsModuleLabel;
     art::Handle<std::vector<recob::Hit>> fInputHits;
     std::vector<std::string> fFclVarNames;  ///< FCL variable names defined by the user
-    std::vector<FltVarStruct> fFVSs;         ///< Set of SumStructs that should be evaluated
+    std::vector<FltVarStruct> fFVSs;         ///< Set of FltVarStructs that should be evaluated
 
+    const geo::GeometryCore* fGeom;
     tca::TrajClusterAlg fTCAlg;
     void MatchHitsToTruth(art::Event const& evt, unsigned int& nMatchedHits);
     void Reconstruct(art::Event const& evt, SumStruct& ss);
@@ -105,7 +131,7 @@ namespace tco {
     unsigned short fWeightOption;
   };
 
-  // struct used to sort hits by Cryo:TPC:Plane:Wire:Tick:LocalIndex
+  // struct used to sort hits by Cryostat:TPC:Plane:Wire:Tick:LocalIndex
   struct HitLoc {
     unsigned int index; // index of this entry in a sort vector
     unsigned int ctp;   // encoded Cryostat, TPC and Plane
@@ -128,7 +154,6 @@ namespace tco {
     : EDAnalyzer{pset}
     , fTCAlg{pset.get<fhicl::ParameterSet>("TrajClusterAlg")}
   {
-    // Call appropriate consumes<>() for any products to be retrieved by this module.
     fInputHitsModuleLabel = pset.get<art::InputTag>("InputHitsModuleLabel");
     fFclVarNames = pset.get<std::vector<std::string>>("FclVarNames");
     fPrintLevel = pset.get<unsigned short>("PrintLevel", 0);
@@ -137,22 +162,29 @@ namespace tco {
   } // constructor
 
   //----------------------------------------------------------------------------
-  bool 
+  void 
   TCOptimizer::Initialize()
   {
     // Parse the FclVarNames vector and define a vector of FCL variables whose
-    // values should be optimized. This should be done pnce at job begin
-    if (fFclVarNames.empty()) return false;
+    // values should be optimized. This is done once at job begin
+    if (fFclVarNames.empty()) return;
 
     unsigned short nReco = 0;
     for(auto strng : fFclVarNames) {
       VarID_t varID;
       auto varPtr = FclVarPtr(strng, varID);
-      if(!varPtr) return false;
+      if(!varPtr) {
+        throw art::Exception(art::errors::Configuration)
+          << " FclVarNames "<<strng<<" is not valid";
+      }
+      // define a reasonable variable lower (upper) range limit and step size
       float fromVal = 0;
       float toVal = 0;
       float step = 0;
-      if (varID == kHitEffFac) {
+      if (varID == kMultHitSep) {
+        // Hit RMS separation cut to consider merging them
+        fromVal = 2.0; toVal = 4.0; step = 0.5;
+      } else if (varID == kHitEffFac) {
         fromVal = 0.1; toVal = 0.8; step = 0.1;
       } else if (varID == kKinkCuts0) {
         // number of points in the kink fit
@@ -161,7 +193,7 @@ namespace tco {
         // kink significance
         fromVal = 2.; toVal = 16; step = 2;
       } else if (varID == kKinkCuts2) {
-        // use Charge?
+        // use Charge? no or yes.
         fromVal = 0.; toVal = 1; step = 1;
       } else if (varID == kAngleRanges0) {
         // Small angle tracking range boundary (degrees)
@@ -170,15 +202,14 @@ namespace tco {
         // maximum Chi/DOF for 2D trajectory fit
         fromVal = 10; toVal = 40; step = 10;
       } else if (varID == kMaxWireSkipNoSignal) {
-        // Handling dead wires
+        // Allows skipping over blocks of dead wires
         fromVal = 0; toVal = 10; step = 2;
-      } else if (varID == kProjectionErrFactor) {
-        // Factor applied to the angle fit error to define a window for
-        // associating hits with a trajectory point
-        fromVal = 1; toVal = 3; step = 1;
+      } else if (varID == kJTMaxHitSep) {
+        // JunkTraj finder separation cut
+        fromVal = 2; toVal = 8; step = 2;
       } else {
-        std::cout<<"invalid varID "<<varID<<"\n";
-        exit(1);
+        throw art::Exception(art::errors::Configuration)
+        <<" invalid varID "<<varID;
       }
       FltVarStruct fvs;
       fvs.varName = strng;
@@ -187,28 +218,37 @@ namespace tco {
       fvs.startValue = *(varPtr);
       SumStruct ss;
       ss.parent = fFVSs.size();
-      // create a SumStruct in a reasonable range
+      // turn off selected algorithms
+      if (varID == kJTMaxHitSep) {
+        ss.value = -1;
+        fvs.ss.push_back(ss);
+      } // turn off selected algorithms
+      // create a SumStruct in the range
       for (float value = fromVal; value <= toVal; value += step) {
-        if (varID == kProjectionErrFactor) std::cout<<"chk "<<value<<"\n";
         ss.value = value;
+        // AngleRanges[0] is converted from degrees to radians in
+        // TrajClusterAlg so do it here to make it simpler for the user
         if (varID == kAngleRanges0) ss.value *= M_PI / 180;
         fvs.ss.push_back(ss);
         ++nReco;
       } // val
       fFVSs.push_back(fvs);
     } // strng
-    std::cout <<"TCO Initialize: This data set will be reconstructed ";
-    std::cout << nReco << " times\n";
-    return true;
+    mf::LogVerbatim("TCO") << "TCO Initialize: This data set will be reconstructed "
+       << nReco << " times";
   } // Initialize
 
   //----------------------------------------------------------------------------
   float * 
   TCOptimizer::FclVarPtr(std::string strng, VarID_t& varID )
   {
-    // returns a pointer to tca::tcc.<fclVarName>
+    // returns a pointer to a tca::tcc.<fclVarName>
 
     // single variables
+    if(strng.compare("MultHitSep") == 0) {
+      varID = kMultHitSep;
+      return &tca::tcc.multHitSep;
+    }
     if(strng.compare("HitErrFac") == 0) {
       varID = kHitEffFac;
       return &tca::tcc.hitErrFac;
@@ -221,9 +261,9 @@ namespace tco {
       varID = kMaxWireSkipNoSignal;
       return &tca::tcc.maxWireSkipNoSignal;
     }
-    if(strng.compare("ProjectionErrFactor") == 0) {
-      varID = kProjectionErrFactor;
-      return &tca::tcc.projectionErrFactor;
+    if(strng.compare("JTMaxHitSep") == 0) {
+      varID = kJTMaxHitSep;
+      return &tca::tcc.JTMaxHitSep;
     }
 
     // vector elements
@@ -250,7 +290,6 @@ namespace tco {
   void
   TCOptimizer::analyze(art::Event const& evt)
   {
-    std::cout<<"inside analyze "<<fInputHitsModuleLabel.label()<<"\n";
     if (!evt.getByLabel(fInputHitsModuleLabel, fInputHits))
       throw cet::exception("TCOptimizer")
         << "Failed to get a handle to hit collection '" << fInputHitsModuleLabel.label() << "'\n";
@@ -260,33 +299,31 @@ namespace tco {
       throw cet::exception("TCOptimizer")
         << "Failed to process hits from '" << fInputHitsModuleLabel.label() << "'\n";
 
+    fGeom = lar::providerFrom<geo::Geometry>();
+    fNPlanes = fGeom->Nplanes();
+
     unsigned int nhm;
     MatchHitsToTruth(evt, nhm);
     if (fG4TrkTjMatch.empty()) return;
     if (nhm == 0) return;
 
-    std::cout<<"update the pointers";
     // update the pointers
     for (auto& fvs : fFVSs) {
       VarID_t varID;
       fvs.ptr = FclVarPtr(fvs.varName, varID);
-      std::cout<<" "<<varID;
       if(!fvs.ptr) throw cet::exception("TCOptimizer")
           << "Failed to update the pointers on event " << evt.event() << "\n";
     } // fvs
-    std::cout<<" done\n";
-    std::cout<<"Reco set";
     // iterate through all of the variables
     for (auto& fvs : fFVSs) {
       // iterate through all variable settings
       for (auto& ss : fvs.ss) {
+        // set the value in TrajClusterAlg
         *(fvs.ptr) = ss.value;
-        std::cout<<" " << *(fvs.ptr);
+        // reconstruct with this value and sum the results
         Reconstruct(evt, ss);
       }
-      std::cout<<" Restore";
       Restore();
-      std::cout<<" done\n";
     } // fvs
     fG4TrkTjMatch.resize(0);
     fHitG4TrkID.resize(0);
@@ -315,6 +352,7 @@ namespace tco {
       if (!useIt) continue;
       float TMeV = 1000 * (mcp.E() - mcp.Mass());
       if (TMeV < 1) continue;
+      // ignore low energy electrons
       if (pdg == 11 && TMeV < 50) continue;
       MatchStruct ms;
       ms.G4TrkID = mcp.TrackId();
@@ -340,7 +378,7 @@ namespace tco {
         } // tide.energyFrac > 0.5
       } // tide
     } // iht
-    if(fPrintLevel > 2) {
+    if(fPrintLevel > 1) {
       std::cout<<"MC-matched hits/total "<<nMatchedHits<<"/"<<(*fInputHits).size();
       std::cout<<" to "<<fG4TrkTjMatch.size()<<" MCParticles\n";
     }
@@ -353,8 +391,6 @@ namespace tco {
     // Reconstruct hits in all TPCs with the current fcl configuration and calculate
     // Efficiency * Purity
 
-    auto const* geom = lar::providerFrom<geo::Geometry>();
-    fNPlanes = geom->Nplanes();
     auto const clockData = 
       art::ServiceHandle<detinfo::DetectorClocksService const>()->DataFor(evt);
     auto const detProp =
@@ -362,9 +398,9 @@ namespace tco {
     art::ServiceHandle<cheat::BackTrackerService const> bt_serv;
 
     int sliceID = 0;
-    for (const auto& tpcid : geom->IterateTPCIDs()) {
+    for (const auto& tpcid : fGeom->IterateTPCIDs()) {
       // ignore protoDUNE dummy TPCs
-      if (geom->TPC(tpcid).DriftDistance() < 25.0) continue;
+      if (fGeom->TPC(tpcid).DriftDistance() < 25.0) continue;
       // find all hits in this tpc
       unsigned int tpc = tpcid.TPC;
       std::vector<unsigned int> tpcHits;
@@ -373,8 +409,7 @@ namespace tco {
         if (hit.WireID().TPC == tpc) tpcHits.push_back(iht);
       } // iht
       if(tpcHits.size() < 3) continue;
-      // sort the slice hits by Cryostat, TPC, Wire, Plane, Start Tick and LocalIndex.
-      // This assumes that hits with larger LocalIndex are at larger Tick.
+      // sort the hits by Cryostat, TPC, Wire, Plane, Start Tick and LocalIndex.
       std::vector<HitLoc> sortVec(tpcHits.size());
       for (unsigned int indx = 0; indx < tpcHits.size(); ++indx) {
         auto& hit = (*fInputHits)[tpcHits[indx]];
@@ -391,9 +426,16 @@ namespace tco {
       // clear the temp vector
       tmp.resize(0);
       sortVec.resize(0);
+      // TrajClusterAlg reconstructs trajectories using hits that have
+      // been assigned to a slice. Make things simple by reconstructing
+      // all hits in a TPC in one slice.
       ++sliceID;
       fTCAlg.RunTrajClusterAlg(clockData, detProp, tpcHits, sliceID);
+      // Calculate Efficiency * Purity for trajectories found in
+      // this slice (TPC)
       SumResults(evt, ss, tpcHits);
+      // We aren't producing any data products here so the slice that
+      // contains them can be deleted
       tca::slices.clear();
     } // tpcid
   } // Reconstruct
@@ -406,7 +448,8 @@ namespace tco {
   {
     // Calculates EP for Tjs reconstructed using tpcHits and sums the results
 
-    // initialize the contents of fG4TrkTjMatch
+    // initialize the contents of fG4TrkTjMatch struct that captures the
+    // best match between a MCParticle and a 2D trajectory in each TPC plane
     for (auto& ms : fG4TrkTjMatch) {
       for (unsigned short plane = 0; plane < fNPlanes; ++plane) {
         ms.nTruHits[plane] = 0;
@@ -418,7 +461,9 @@ namespace tco {
 
     // count the truth hits
     for (auto iht : tpcHits) {
+      // require the hit to be matched to a MCParticle
       if (fHitG4TrkID[iht] == INT_MAX) continue;
+      // look for this MCParticle (indexed by Geant4 track ID)
       unsigned short indx = 0;
       for (indx = 0; indx < fG4TrkTjMatch.size(); ++indx) 
         if (fG4TrkTjMatch[indx].G4TrkID == fHitG4TrkID[iht]) break;
@@ -427,7 +472,7 @@ namespace tco {
       ++fG4TrkTjMatch[indx].nTruHits[hit.WireID().Plane];
     } // iht
 
-    // account for a major reco failure
+    // account for a major reco failure - no valid reconstructed slice
     if (tca::slices.empty() || (!tca::slices.empty() && !tca::slices.back().isValid)) {
       for (auto& ms : fG4TrkTjMatch) {
         // increment epCnt if there were enuf hits to reconstruct
@@ -443,29 +488,25 @@ namespace tco {
       return;
     } // tca::slices.empty()
 
+    // There is only one slice per reconstruction iteration
     auto& slc = tca::slices.back();
+    // iterate over all trajectories in the slice
     for (auto& tj : slc.tjs) {
       if (tj.AlgMod[tca::kKilled]) continue;
       // vector of trajectory hit -> G4 TrackID + count
       std::vector<std::pair<int, float>> tidCnt;
       unsigned short plane = USHRT_MAX;
       float nRecoHits = 0;
+      // iterate over all trajectory points
       for (auto& tp : tj.Pts) {
         if (tp.Chg <= 0) continue;
+        // iterate over all hits in this trajectory point
         for (unsigned short ii = 0; ii < tp.Hits.size(); ++ii) {
+          // ignore hits that aren't actually used to define the position and charge
           if (!tp.UseHit[ii]) continue;
-          if (tp.Hits[ii] >= slc.slHits.size()) {
-            std::cout<<"Bad tp.Hits T"<<tj.WorkID<<" in CTP "<<tj.CTP;
-            std::cout<<" "<<tp.Hits[ii]<<" max "<<slc.slHits.size();
-            std::cout<<" tp.Hits size "<<tp.Hits.size()<<" ii "<<ii;
-            std::cout<<"\n";
-            continue;
-          }
+          // get a reference from the slice hit collection to the allHits collection
           size_t iht = slc.slHits[tp.Hits[ii]].allHitsIndex;
-          if (iht >= (*fInputHits).size()) {
-            std::cout<<"Bad inputHits ref "<<iht<<" "<<(*fInputHits).size()<<"\n";
-            continue;
-          }
+          if (iht >= (*fInputHits).size()) continue;
           if (plane == USHRT_MAX) plane = (*fInputHits)[iht].WireID().Plane;
           if(fHitG4TrkID[iht] == INT_MAX) continue;
           int g4Tid = fHitG4TrkID[iht];
@@ -473,12 +514,12 @@ namespace tco {
           for (indx = 0; indx < tidCnt.size(); ++indx) if (tidCnt[indx].first == g4Tid) break;
           if (indx == tidCnt.size()) tidCnt.push_back(std::make_pair(g4Tid, 0));
           ++tidCnt[indx].second;
-          // Note that only MC-matched hits are counted (to calculate purity)
+          // Note that only MC-matched hits are counted to calculate purity
           ++nRecoHits;
         } // ii
       } // tp
       if(tidCnt.empty()) continue;
-      // find the match with the highest count
+      // find the tidCnt vector element with the highest matched-hit count
       unsigned short indx = 0;
       float maxCnt = 0;
       for (unsigned short ii = 0; ii < tidCnt.size(); ++ii) {
@@ -489,27 +530,35 @@ namespace tco {
       auto& bestTidCnt = tidCnt[indx];
       // now compare with an existing tj -> G4 track
       for (auto& g4TrkMatch : fG4TrkTjMatch) {
+        // find the match with the correct Geant4 Track ID
         if (g4TrkMatch.G4TrkID != bestTidCnt.first) continue;
+        // ignore lower count matches
         if (g4TrkMatch.nTruRecoHits[plane] > bestTidCnt.second) continue;
-        // update
+        // Found a better match - update
         g4TrkMatch.nTruRecoHits[plane] = bestTidCnt.second;
         g4TrkMatch.nRecoHits[plane] = nRecoHits;
         g4TrkMatch.TjIDs[plane] = tj.ID;
       } // g4TrkMatch
     } // tj
 
-    // now sum the results in the SumStruct
+    // now update the sums in the SumStruct
     for (auto& g4tktjm : fG4TrkTjMatch) {
       for (unsigned short plane = 0; plane < fNPlanes; ++plane) {
+        // require >= 3 MC-matched hits in a plane
         if (g4tktjm.nTruHits[plane] < fMinTruHitsInPlane) continue;
+        // assume that reconstruction failed
         float eff = 0;
         float pur = 0;
         if (g4tktjm.nRecoHits[plane] > 0) {
+          // a trajectory was reconstructed. Calculate efficiency and purity
           eff = g4tktjm.nTruRecoHits[plane] / g4tktjm.nTruHits[plane];
           pur = g4tktjm.nTruRecoHits[plane] / g4tktjm.nRecoHits[plane];
         }
+        // weight the performance metric by the total number of MCParticles
+        // (fWeightOption = 0) or the total number of MCParticle matched hits
+        // (fWeightOption > 0)
         float wght = 1;
-        if (fWeightOption == 1) wght = g4tktjm.nTruHits[plane];
+        if (fWeightOption > 0) wght = g4tktjm.nTruHits[plane];
         ss.epCnt += wght;
         ss.epSum += wght * eff * pur;
         if(fPrintLevel > 1) {
@@ -541,9 +590,7 @@ namespace tco {
     std::cout<<"beginJob ";
     tca::tcc.match3DCuts[0] = -1;
     std::cout<<"Turned off 3D matching \n";
-    if(!Initialize()) {
-      throw cet::exception("TCOptimizer") << " Invalid FclVarNames definition";
-    }
+    Initialize();
   } // beginJob
 
   //----------------------------------------------------------------------------

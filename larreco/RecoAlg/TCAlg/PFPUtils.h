@@ -74,13 +74,11 @@ namespace tca {
   SectionFit FitTP3Ds(detinfo::DetectorClocksData const& clockData,
                       detinfo::DetectorPropertiesData const& detProp,
                       const TCSlice& slc,
-                      const std::vector<TP3D>& tp3ds,
+                      std::vector<TP3D>& tp3ds,
                       unsigned short fromPt,
                       short fitDir,
                       unsigned short nPtsFit, bool prt);
-  double FitChiDOF(const std::vector<TP3D>& tp3ds, 
-                   const std::vector<double> weights);
-  bool FitPFP(detinfo::DetectorClocksData const& clockData,
+  bool FitRange(detinfo::DetectorClocksData const& clockData,
                 detinfo::DetectorPropertiesData const& detProp,
                 const TCSlice& slc,
                 PFPStruct& pfp,
@@ -103,11 +101,20 @@ namespace tca {
   void Recover(detinfo::DetectorClocksData const& clockData,
                detinfo::DetectorPropertiesData const& detProp,
                TCSlice& slc, PFPStruct& pfp, bool prt);
-  bool MakeTP3Ds(detinfo::DetectorPropertiesData const& detProp, TCSlice& slc,
+  bool MakeTP3Ds(detinfo::DetectorClocksData const& clockData,
+                 detinfo::DetectorPropertiesData const& detProp, TCSlice& slc,
                  PFPStruct& pfp, bool prt);
-  bool MakeSmallAnglePFP(detinfo::DetectorPropertiesData const& detProp,
+  bool MakeSmallAnglePFP(detinfo::DetectorClocksData const& clockData,
+                         detinfo::DetectorPropertiesData const& detProp,
                          TCSlice& slc, PFPStruct& pfp,
                          bool prt);
+  bool DefineSectionFits(detinfo::DetectorClocksData const& clockData,
+                       detinfo::DetectorPropertiesData const& detProp,
+                       TCSlice& slc, PFPStruct& pfp, bool prt);
+  SectionFit DefineBareSF(Point3_t startPos, Point3_t endPos);
+  bool FindEndPos(detinfo::DetectorClocksData const& clockData,
+                  detinfo::DetectorPropertiesData const& detProp,
+                  TCSlice& slc, PFPStruct& pfp, bool prt);
   void Reverse(TCSlice& slc, PFPStruct& pfp);
   void FillmAllTraj(detinfo::DetectorPropertiesData const& detProp, TCSlice& slc);
   TP3D MakeTP3D(detinfo::DetectorPropertiesData const& detProp, 
@@ -143,6 +150,15 @@ namespace tca {
                     float& dEdXAve,
                     float& dEdXRms);
   double GetPitch(const TP3D& tp3d);
+  void DoPID(detinfo::DetectorClocksData const& clockData,
+             detinfo::DetectorPropertiesData const& detProp,
+             TCSlice& slc, PFPStruct& pfp);
+  void FindResidualRangeOffsets(detinfo::DetectorClocksData const& clockData,
+                                detinfo::DetectorPropertiesData const& detProp, 
+                                TCSlice& slc, PFPStruct& pfp, TP3D const& stopTP3D, 
+                                float& minOffset, float& maxOffset);
+  void CalcChi2PID(std::vector<CaloStruct> const& caloVec,
+                   unsigned short ptcl, float& offset, float& chi2);
   TP3D CreateTP3D(detinfo::DetectorPropertiesData const& detProp, 
                   const TCSlice& slc, int tjID, unsigned short tpIndex);
   bool SetSection(detinfo::DetectorPropertiesData const& detProp,

@@ -20,6 +20,7 @@
 #include "art/Framework/Services/Registry/ServiceHandle.h"
 #include "art_root_io/TFileService.h"
 #include "canvas/Persistency/Common/FindManyP.h"
+#include "canvas/Persistency/Common/FindOneP.h"
 #include "canvas/Persistency/Common/Ptr.h"
 #include "fhiclcpp/ParameterSet.h"
 #include "messagefacility/MessageLogger/MessageLogger.h"
@@ -30,6 +31,7 @@
 #include "lardata/DetectorInfoServices/DetectorClocksService.h"
 #include "lardataobj/RecoBase/Cluster.h"
 #include "lardataobj/RecoBase/Hit.h"
+#include "lardataobj/RecoBase/PFParticle.h"
 #include "larsim/MCCheater/BackTrackerService.h"
 #include "larsim/MCCheater/ParticleInventoryService.h"
 #include "nug4/ParticleNavigation/ParticleList.h"
@@ -110,17 +112,11 @@ namespace cluster {
   ClusterAna::beginJob()
   {
 
-    if (fPrintLevel > 0) {
-      mf::LogVerbatim myprt("ClusterAna");
-      myprt << "ClusterAna: MCParticle selection";
-      if (fSkipCosmics) myprt << ": ignoring Cosmics.";
-      if(fPrintLevel > 1) myprt << " Note: Hit format is <TPC>:<Plane>:<Wire>:<PeakTime>";
-    }
-
     // get access to the TFile service
     art::ServiceHandle<art::TFileService const> tfs;
   }
 
+  //------------------------------------------------------------------
   void
   ClusterAna::endJob()
   {
@@ -148,6 +144,7 @@ namespace cluster {
     }
   } // endJob
 
+  //------------------------------------------------------------------
   void
   ClusterAna::analyze(const art::Event& evt)
   {
@@ -209,6 +206,9 @@ namespace cluster {
     // size the vector of Hit -> MCParticle index
     if((*allHits).size() < 3) return;
     std::vector<unsigned int> hitMCPIndex((*allHits).size(), UINT_MAX);
+
+    // look for a cluster -> PFParticle assn
+    art::FindManyP<recob::PFParticle> fmpfp(allCls, evt, fClusterModuleLabel);
 
     art::ServiceHandle<cheat::BackTrackerService const> bt_serv;
     art::ServiceHandle<geo::Geometry const> geom;
@@ -364,7 +364,12 @@ namespace cluster {
               myprt << " -> Cls " <<cls.ID();
               auto clsHits = fmch.at(match.clsIndex[plane]);
               myprt << " nRecoHits " << clsHits.size();
-              myprt << " nTruRecoHits " << match.clsTruHitCount[plane] << "\n";
+              myprt << " nTruRecoHits " << match.clsTruHitCount[plane];
+              if (fmpfp.isValid()) {
+                auto& pfps = fmpfp.at(match.clsIndex[plane]);
+                if (!pfps.empty()) myprt<<" PFP.Self "<<pfps[0]->Self()<<" PDGCode "<<pfps[0]->PdgCode();
+              } // isValid
+              myprt << "\n";
             } // match.clsTruHitCount[plane] > 0
             else {
               myprt<<" *** No Cluster match\n";
@@ -424,6 +429,7 @@ namespace cluster {
 
   } // analyze
 
+  //------------------------------------------------------------------
   void
   ClusterAna::FindFirstLastWire(art::Handle<std::vector<recob::Hit>> const& allHits,
                                 std::vector<unsigned int> const& hitMCPIndex,
@@ -454,6 +460,7 @@ namespace cluster {
     } // iht
   } // FindFirstLastWire
 
+  //------------------------------------------------------------------
   int
   ClusterAna::PDGCodeIndex(simb::MCParticle const& mcp)
   {
@@ -479,6 +486,7 @@ namespace cluster {
     }
   } // PDGCodeIndex
 
+  //------------------------------------------------------------------
   std::string
   ClusterAna::PrintHit(const recob::Hit& hit)
   {

@@ -48,9 +48,6 @@ namespace tca {
   void MakeHaloTj(TCSlice& slc, Trajectory& muTj, bool prt);
   float MaxChargeAsymmetry(TCSlice& slc, std::vector<int>& tjIDs);
   int PDGCodeVote(const TCSlice& slc, const std::vector<int>& tjIDs);
-  int NeutrinoPrimaryTjID(const TCSlice& slc, const Trajectory& tj);
-  int PrimaryID(const TCSlice& slc, const Trajectory& tj);
-  int PrimaryUID(const TCSlice& slc, const PFPStruct& pfp);
   float PointPull(TCSlice& slc, Point2_t pos, float chg, const Trajectory& tj);
   bool CompatibleMerge(const TCSlice& slc, std::vector<int>& tjIDs, bool prt);
   bool CompatibleMerge(const TCSlice& slc, const Trajectory& tj1, const Trajectory& tj2, bool prt);

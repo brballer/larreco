@@ -29,6 +29,7 @@ namespace tca {
     int WorkID {0}; ///< Select the StartWorkID for debugging
     int UID {0};     ///< or alternatively the trajectory unique ID
     unsigned int MVI {UINT_MAX}; ///< MatchVec Index for detailed 3D matching
+    int PFPID {0};
     unsigned short MVI_Iter {USHRT_MAX}; ///< MVI iteration - see FindPFParticles
     int Slice {-1};
   };

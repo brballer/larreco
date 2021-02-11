@@ -168,6 +168,7 @@ namespace tca {
     float DeltaRMS{0.02};           // RMS of Deviation between trajectory and hits (WSE)
     float FitChi{0};                // Chi/DOF of the fit
     int InPFP{0};                   // ID of the PFParticle that owns this TP
+    int ParentID{0};        // ID of the trajectory to which this TP previously belonged
     unsigned short NTPsFit{2};      // Number of trajectory points fitted to make this point
     unsigned short Step{0};         // Step number at which this TP was created
     unsigned short AngleCode{0};    // 0 = small angle, 1 = large angle, 2 = very large angle
@@ -194,8 +195,7 @@ namespace tca {
     CTP_t CTP{0};               ///< Cryostat, TPC, Plane code
     std::bitset<128> AlgMod;    ///< Bit set if algorithm AlgBit_t modifed the trajectory
     int WorkID{0};
-    int ParentID{
-      -1}; ///< ID of the parent, or the ID of the Tj this one was merged with if it is killed
+    int ParentID{0}; ///< ID of the Tj this one was derived from (NOT A PARENT-DAUGHTER RELATIONSHIP)
     float AveChg{0};       ///< Calculated using ALL hits
     float TotChg{0};       ///< Total including an estimate for dead wires
     float ChgRMS{0.5};     /// Normalized RMS using ALL hits. Assume it is 50% to start
@@ -207,7 +207,7 @@ namespace tca {
     int ID;                    ///< ID that is local to one slice
     int UID;                   ///< a unique ID for all slices
     int SSID{0};               ///< ID of a 2D shower struct that this tj is in
-    unsigned short PDGCode{0}; ///< shower-like or track-like {default is track-like}
+    int PDGCode{0}; ///< shower-like or track-like {default is track-like}
     unsigned short Pass{0};    ///< the pass on which it was created
     short StepDir{0};          ///< -1 = going US (-> small wire#), 1 = going DS (-> large wire#)
     short StartEnd{-1};        ///< The starting end (-1 = don't know)
@@ -260,9 +260,9 @@ namespace tca {
   };
 
   typedef enum {
-    kTP3DGood,    // Is good for fitting and calorimetry
+    kTP3DGood,    // Is good for fitting
     kTP3DBad,      // Should be removed from the trajectory
-    kTP3DHiDEdx  // Has high dE/dx
+    kTP3DHiDEdx  // Has high dE/dx -> lower weight for small angle pfp fit
   } TP3DFlags_t;
 
   // Struct for 3D trajectory matching
@@ -285,6 +285,7 @@ namespace tca {
     std::array<std::vector<float>, 2> dEdx;
     std::array<std::vector<float>, 2> dEdxErr;
     std::array<int, 2> Vx3ID{{0, 0}};
+    std::array<Point3_t, 2> EndPos{{0, 0}};
     int BestPlane{-1};
     int PDGCode{-1};
     std::vector<int> DtrUIDs;
@@ -306,6 +307,12 @@ namespace tca {
     kdEdxDefined        //< Set true if dEdx is defined in the TP3Ds vector
   } PFPFlags_t;
 
+  struct CaloStruct {
+    float RR;       // residual range
+    float dEdx;     // dE/dx
+    float weight;   // matching weight
+  };
+
   struct CRTreeVars {
     std::vector<int> cr_origin;
     std::vector<float> cr_pfpxmin;
@@ -321,8 +328,9 @@ namespace tca {
     kRTPs3D,
     kSmallAng3D,
     kKillBadPts3D,
-    kMat3D, // 2D algorithms for Tjs here and below
-    kMaskHits,
+    kMat3D, 
+    kDidPID3D,
+    kMaskHits, // 2D algorithms for Tjs here and below
     kMaskBadTPs,
     kMichel,
     kDeltaRay,
@@ -386,7 +394,7 @@ namespace tca {
     kSlowing  ///< use the slowing-down strategy
   } Strategy_t;
 
-  // Stop flag bits
+  // End flag bits
   typedef enum {
     kHitsAfterEnd,   ///< There is a hit just DS (end 1) (US = end 0) at the end of the Tj
     kEndKink,
@@ -394,6 +402,7 @@ namespace tca {
     kEndBraggChkd,    ///< A check was made for a Bragg peak at this end 
     kEndOutFV,
     kEndNoFitVx,
+    kEnd2VConflict,   ///< there is a conflict between 2V and 3V assignments
     kFlagBitSize ///< don't mess with this line
   } EndFlag_t;
 
@@ -441,6 +450,9 @@ namespace tca {
     std::vector<unsigned short> minPts;       ///< min number of Pts required to make a trajectory
     std::vector<unsigned short> maxAngleCode; ///< max allowed angle code for each pass
     std::vector<float> angleRanges;           ///< list of max angles for each angle range
+    std::vector<std::vector<float>> dEdxRR;   ///< dEdx vs residual range for muon, pion, kaon, proton
+    std::vector<std::vector<float>> dEdxRRErr2;
+    float dEdxRRBinWidth {0};                 ///< dEdxRR bin width (cm)
     float wirePitch;
     float unitsPerTick; ///< scale factor from Tick to WSE equivalent units
     std::vector<float> maxPos0;
@@ -449,8 +461,6 @@ namespace tca {
     float maxChi;
     const geo::GeometryCore* geom;
     calo::CalorimetryAlg* caloAlg;
-    TMVA::Reader* showerParentReader;
-    std::vector<float> showerParentVars;
     float hitErrFac;
     float maxWireSkipNoSignal;   ///< max number of wires to skip w/o a signal on them
     float maxWireSkipWithSignal; ///< max number of wires to skip with a signal on them
@@ -468,6 +478,7 @@ namespace tca {
     bool dbgVxMerge{false};
     bool dbg3V{false}; ///< debug 3D vertex finding
     bool dbgPFP{false};
+    bool dbgPID{false};     //< debug particle ID
     bool dbgStitch{false};  ///< debug PFParticle stitching
     bool dbgSummary{false}; ///< print a summary report
     bool dbgDump{false};    /// dump trajectory points

@@ -38,8 +38,9 @@ namespace tca {
       std::cout << " '3V' to debug 3D vertex finding\n";
       std::cout << " 'VxMerge' to debug 2D vertex merging\n";
       std::cout << " 'JunkVx' to debug 2D junk vertex finder\n";
-      std::cout << " 'PFP' to debug 3D matching and PFParticles\n";
-      std::cout << " 'MVI <MVI> <MVI Iteration>' for detailed debugging of one PFP MatchVecIndex\n";
+      std::cout << " 'PFP' for summary of 3D matching and PFParticles\n";
+      std::cout << " 'MVI <TPC> <MVI> <MVI Iteration>' for detailed debugging of one PFP\n";
+      std::cout << " 'PID <TPC> <PFP ID>' to debug Particle ID\n";
       std::cout << " 'DeltaRay' to debug delta ray tagging\n";
       std::cout << " 'Muon' to debug muon tagging\n";
       std::cout << " '2S <CTP>' to debug a 2D shower in CTP\n";
@@ -101,14 +102,34 @@ namespace tca {
       tcc.dbgDump = true;
       return true;
     } // nums.size() == 5
-    if (words[0] == "PFP" || words[0] == "MVI") {
+    if (words[0] == "PID") {
+      if (words.size() != 3) {
+        std::cout<<" >>>>>> Should be be PID <TPC> <PFP ID>\n";
+        tcc.modes[kModeDebug] = false;
+        return false;
+      }
+      tcc.dbgPID = true;
+      debug.TPC = std::stoi(words[1]);
+      debug.PFPID = std::stoi(words[2]);
+      tcc.modes[kModeDebug] = true;
+      return true;
+    }
+    if (words[0] == "PFP") {
       tcc.dbgPFP = true;
       tcc.modes[kModeDebug] = true;
-      // Use debug.Hit to identify the matchVec index
-      if (words.size() > 2) {
-        debug.MVI = std::stoi(words[1]);
-        if (words.size() == 3) debug.MVI_Iter = std::stoi(words[2]);
+      return true;
+    }
+    if (words[0] == "MVI") {
+      if (words.size() != 4) {
+        std::cout<<" >>>>>> Should be be MVI <TPC> <MVI> <MVI_Iter>\n";
+        tcc.modes[kModeDebug] = false;
+        return false;
       }
+      tcc.dbgPFP = true;
+      tcc.modes[kModeDebug] = true;
+      debug.TPC = std::stoi(words[1]);
+      debug.MVI = std::stoi(words[2]);
+      debug.MVI_Iter = std::stoi(words[3]);
       return true;
     } // PFP
     if (words.size() == 2 && words[0] == "CTP") {
@@ -148,6 +169,7 @@ namespace tca {
     if (words.size() == 3 && words[0] == "Reco" && words[1] == "TPC") {
       tcc.recoTPC = std::stoi(words[2]);
       tcc.modes[kModeDebug] = true;
+      debug.TPC = tcc.recoTPC;
       std::cout << "Reconstructing only in TPC " << tcc.recoTPC << "\n";
       return true;
     }
@@ -335,6 +357,8 @@ namespace tca {
     if (tcc.dbg2V) std::cout << " dbg2V";
     if (tcc.dbg3V) std::cout << " dbg3V";
     if (tcc.dbgPFP) std::cout << " dbgPFP";
+    if (tcc.dbgPFP && debug.MVI >= 0) std::cout << " MVI " << debug.TPC 
+        << ":" << debug.MVI << ":" << debug.MVI_Iter;
     if (tcc.dbgStitch) std::cout << " dbgStitch";
     if (tcc.dbgSummary) std::cout << " dbgSummary";
     if (tcc.dbgDump) std::cout << " dbgDump";
@@ -661,7 +685,7 @@ namespace tca {
       myprt<<"Tj AngleCode-EndFlag decoder (EF): <AngleCode> + <end flag>";
       myprt<<" (B=Bragg Peak, V=Vertex, A=AngleKink, C=ChargeKink, T=Trajectory, S=StartEnd)\n";
       myprt<<"     prodID    CTP  Pts     W:T      Ang EF   AveQ     W:T      Ang EF   ";
-      myprt<<"AveQ Chg(k) chgRMS  Mom __Vtx__  PDG WorkID \n";
+      myprt<<"AveQ Chg(k) chgRMS  Mom __Vtx__  PDG WorkID ParID \n";
       printHeader = false;
     }
     auto sIndx = GetSliceIndex("T", tj.UID);
@@ -707,6 +731,7 @@ namespace tca {
     myprt << std::setw(4) << vxid;
     myprt << std::setw(5) << tj.PDGCode;
     myprt << std::setw(7) << tj.WorkID;
+    myprt << std::setw(7) << tj.ParentID;
     for (unsigned short ib = 0; ib < AlgBitNames.size(); ++ib)
       if (tj.AlgMod[ib]) myprt << " " << AlgBitNames[ib];
     for (unsigned short ib = 0; ib < StrategyBitNames.size(); ++ib)
@@ -875,7 +900,7 @@ namespace tca {
       std::vector<unsigned int> tmp;
       myprt << someText
             << "   UID   CTP Pass  Pts     W:T      Ang EF AveQ     W:T      Ang EF AveQ Chg(k) "
-               "chgRMS  Mom SDr __Vtx__  PDG  Par Pri NuPar   WorkID \n";
+               "chgRMS  Mom SDr __Vtx__  PDG  Par WorkID \n";
       for (unsigned short ii = 0; ii < slc.tjs.size(); ++ii) {
         auto& aTj = slc.tjs[ii];
         if (debug.CTP != UINT_MAX && aTj.CTP != debug.CTP) continue;
@@ -920,8 +945,6 @@ namespace tca {
         myprt << std::setw(4) << aTj.VtxID[1];
         myprt << std::setw(5) << aTj.PDGCode;
         myprt << std::setw(5) << aTj.ParentID;
-        myprt << std::setw(5) << PrimaryID(slc, aTj);
-        myprt << std::setw(6) << NeutrinoPrimaryTjID(slc, aTj);
         myprt << std::setw(7) << aTj.WorkID;
         for (unsigned short ib = 0; ib < AlgBitNames.size(); ++ib)
           if (aTj.AlgMod[ib]) myprt << " " << AlgBitNames[ib];
@@ -1097,7 +1120,7 @@ namespace tca {
       myprt << someText;
       myprt << "  PFP sVx  ________sPos_______ EF _______sDir______ ____sdEdx_____ eVx  "
                "________ePos_______ EF _______eDir______ ____edEdx____   Len nTp3 MCSMom ShLike? "
-               "PDG Par Prim\n";
+               "PDG Par\n";
     }
     myprt << someText;
     std::string pid = "P" + std::to_string(pfp.ID);
@@ -1148,7 +1171,6 @@ namespace tca {
     myprt << std::setw(5) << pfp.PDGCode;
     myprt << "      NA";
     myprt << std::setw(4) << pfp.ParentUID;
-    myprt << std::setw(5) << PrimaryUID(slc, pfp);
     if (!pfp.TjIDs.empty()) {
       for (auto& tjID : pfp.TjIDs)
         myprt << " T" << tjID;

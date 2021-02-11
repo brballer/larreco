@@ -45,6 +45,7 @@ namespace tca {
     // Construct a local TP from the last TP that will be moved on each step.
     // Only the Pos and Dir variables will be used
     TrajPoint ltp;
+    ltp.ParentID = tj.ID;
     ltp.CTP = tj.CTP;
     ltp.Pos = tj.Pts[lastPt].Pos;
     ltp.Dir = tj.Pts[lastPt].Dir;
@@ -755,8 +756,26 @@ namespace tca {
       tj.MCSMom = newMCSMom;
     } // npwc > 3
 
+    // decide whether to relax cuts if the forecast indicates that this is a
+    // stopping trajectory and will end soon
+    bool theEndIsNear = false;
+    if (!tjfs.empty() && tcc.useAlg[kNewCuts]) {
+      auto& lastForecast = tjfs.back();
+      if (tcc.dbgStp) {
+        mf::LogVerbatim("TC") << " forecast end " << lastForecast.nextForecastUpdate
+            << " npwc " << npwc;
+      }
+      theEndIsNear = (tj.Strategy[kSlowing] && npwc > lastForecast.nextForecastUpdate - 3 &&
+            lastForecast.endBraggPeak );
+    } // a forecast exists
+
     if(tcc.dbgStp) {
-      mf::LogVerbatim("TC")<<"UT: lastPt "<<lastPt<<" lastTP.Delta "<<lastTP.Delta<<" previous point with hits "<<prevPtWithHits<<" tj.Pts size "<<tj.Pts.size()<<" AngleCode "<<lastTP.AngleCode<<" PDGCode "<<tj.PDGCode<<" maxChi "<<maxChi<<" minPtsFit "<<minPtsFit<<" MCSMom "<<tj.MCSMom;
+      mf::LogVerbatim myprt("TC");
+      myprt << "UT: lastPt " << lastPt << " Delta " << lastTP.Delta;
+      myprt << " prev pt with hits " << prevPtWithHits << " npts " <<tj.Pts.size();
+      myprt << " AngleCode " << lastTP.AngleCode <<" PDGCode " << tj.PDGCode << " maxChi " <<maxChi;
+      myprt << " minPtsFit " << minPtsFit << " MCSMom " << tj.MCSMom;
+      myprt << " near the end? " <<theEndIsNear;
     }
 
     UpdateTjChgProperties("UT", slc, tj, tcc.dbgStp);
@@ -815,7 +834,7 @@ namespace tca {
     }
 
     unsigned short ndead = DeadWireCount(slc, lastTP.HitPos[0], tj.Pts[firstFitPt].HitPos[0], tj.CTP);
-    if(lastTP.FitChi > 1.5 && tj.Pts.size() > 6) {
+    if(lastTP.FitChi > 1.5 && tj.Pts.size() > 6 && !theEndIsNear) {
       // A large chisq jump can occur if we just jumped a large block of dead wires. In
       // this case we don't want to mask off the last TP but reduce the number of fitted points
       // This count will be off if there a lot of dead or missing wires...
@@ -844,7 +863,7 @@ namespace tca {
     } // lastTP.FitChi > 2 ...
 
     // Deal with a really long trajectory that is in trouble (uB cosmic).
-    if(tj.PDGCode == 13 && lastTP.FitChi > tcc.maxChi) {
+    if(tj.PDGCode == 13 && lastTP.FitChi > tcc.maxChi && !theEndIsNear) {
       if(lastTP.NTPsFit > 1.3 * tcc.muonTag[0]) {
         lastTP.NTPsFit *= 0.8;
         if(tcc.dbgStp) mf::LogVerbatim("TC")<<" Muon - Reduce NTPsFit "<<lastPt;
@@ -855,61 +874,61 @@ namespace tca {
     }
 
     if(tcc.dbgStp) mf::LogVerbatim("TC")<<"UT: First fit "<<lastTP.Pos[0]<<" "<<lastTP.Pos[1]<<"  dir "<<lastTP.Dir[0]<<" "<<lastTP.Dir[1]<<" FitChi "<<lastTP.FitChi<<" NTPsFit "<<lastTP.NTPsFit<<" ndead wires "<<ndead<<" tj.MaskedLastTP "<<tj.MaskedLastTP;
-      if(tj.MaskedLastTP) {
-        UnsetUsedHits(slc, lastTP);
-        DefineHitPos(slc, lastTP);
-        SetEndPoints(tj);
-        lastPt = tj.EndPt[1];
-        lastTP.NTPsFit -= 1;
+    if(tj.MaskedLastTP) {
+      UnsetUsedHits(slc, lastTP);
+      DefineHitPos(slc, lastTP);
+      SetEndPoints(tj);
+      lastPt = tj.EndPt[1];
+      lastTP.NTPsFit -= 1;
+      FitTraj(slc, tj);
+      UpdateTjChgProperties("UT", slc, tj, tcc.dbgStp);
+      SetAngleCode(lastTP);
+      return;
+    }  else if (!theEndIsNear) {
+      // a more gradual change in chisq. Maybe reduce the number of points
+      unsigned short newNTPSFit = lastTP.NTPsFit;
+      // reduce the number of points fit to keep Chisq/DOF < 2 adhering to the pass constraint
+      // and also a minimum number of points fit requirement for long muons
+      float prevChi = lastTP.FitChi;
+      unsigned short ntry = 0;
+      float chiCut = 1.5;
+      if(tj.Strategy[kStiffMu]) chiCut = 5;
+      while(lastTP.FitChi > chiCut && lastTP.NTPsFit > minPtsFit) {
+        if(lastTP.NTPsFit > 15) {
+          newNTPSFit = 0.7 * newNTPSFit;
+        } else if(lastTP.NTPsFit > 4) {
+          newNTPSFit -= 2;
+        } else {
+          newNTPSFit -= 1;
+        }
+        if(lastTP.NTPsFit < 3) newNTPSFit = 2;
+        if(newNTPSFit < minPtsFit) newNTPSFit = minPtsFit;
+        lastTP.NTPsFit = newNTPSFit;
+        // BB Try to add a last lonely hit on a low MCSMom tj on the last try
+        if(newNTPSFit == minPtsFit && tj.MCSMom < 30) chiCut = 2;
+        if(tcc.dbgStp) mf::LogVerbatim("TC")<<"  Bad FitChi "<<lastTP.FitChi<<" Reduced NTPsFit to "<<lastTP.NTPsFit<<" Pass "<<tj.Pass<<" chiCut "<<chiCut;
         FitTraj(slc, tj);
-        UpdateTjChgProperties("UT", slc, tj, tcc.dbgStp);
-        SetAngleCode(lastTP);
-        return;
-      }  else {
-        // a more gradual change in chisq. Maybe reduce the number of points
-        unsigned short newNTPSFit = lastTP.NTPsFit;
-        // reduce the number of points fit to keep Chisq/DOF < 2 adhering to the pass constraint
-        // and also a minimum number of points fit requirement for long muons
-        float prevChi = lastTP.FitChi;
-        unsigned short ntry = 0;
-        float chiCut = 1.5;
-        if(tj.Strategy[kStiffMu]) chiCut = 5;
-        while(lastTP.FitChi > chiCut && lastTP.NTPsFit > minPtsFit) {
-          if(lastTP.NTPsFit > 15) {
-            newNTPSFit = 0.7 * newNTPSFit;
-          } else if(lastTP.NTPsFit > 4) {
-            newNTPSFit -= 2;
-          } else {
-            newNTPSFit -= 1;
-          }
-          if(lastTP.NTPsFit < 3) newNTPSFit = 2;
-          if(newNTPSFit < minPtsFit) newNTPSFit = minPtsFit;
-          lastTP.NTPsFit = newNTPSFit;
-          // BB Try to add a last lonely hit on a low MCSMom tj on the last try
-          if(newNTPSFit == minPtsFit && tj.MCSMom < 30) chiCut = 2;
-          if(tcc.dbgStp) mf::LogVerbatim("TC")<<"  Bad FitChi "<<lastTP.FitChi<<" Reduced NTPsFit to "<<lastTP.NTPsFit<<" Pass "<<tj.Pass<<" chiCut "<<chiCut;
-          FitTraj(slc, tj);
-          tj.NeedsUpdate = true;
-          if(lastTP.FitChi > prevChi) {
-            if(tcc.dbgStp) mf::LogVerbatim("TC")<<"  Chisq is increasing "<<lastTP.FitChi<<"  Try to remove an earlier bad hit";
-            MaskBadTPs(slc, tj, chiCut);
-            ++ntry;
-            if(ntry == 2) break;
-          }
-          prevChi = lastTP.FitChi;
-          if(lastTP.NTPsFit == minPtsFit) break;
-        } // lastTP.FitChi > 2 && lastTP.NTPsFit > 2
-      }
-      // last ditch attempt if things look bad. Drop the last hit
-      if(tj.Pts.size() > tcc.minPtsFit[tj.Pass] && lastTP.FitChi > maxChi) {
-        if(tcc.dbgStp) mf::LogVerbatim("TC")<<"  Last try. Drop last TP "<<lastTP.FitChi<<" NTPsFit "<<lastTP.NTPsFit;
-        UnsetUsedHits(slc, lastTP);
-        DefineHitPos(slc, lastTP);
-        SetEndPoints(tj);
-        lastPt = tj.EndPt[1];
-        FitTraj(slc, tj);
-        tj.MaskedLastTP = true;
-      }
+        tj.NeedsUpdate = true;
+        if(lastTP.FitChi > prevChi) {
+          if(tcc.dbgStp) mf::LogVerbatim("TC")<<"  Chisq is increasing "<<lastTP.FitChi<<"  Try to remove an earlier bad hit";
+          MaskBadTPs(slc, tj, chiCut);
+          ++ntry;
+          if(ntry == 2) break;
+        }
+        prevChi = lastTP.FitChi;
+        if(lastTP.NTPsFit == minPtsFit) break;
+      } // lastTP.FitChi > 2 && lastTP.NTPsFit > 2
+    }
+    // last ditch attempt if things look bad. Drop the last hit
+    if(tj.Pts.size() > tcc.minPtsFit[tj.Pass] && lastTP.FitChi > maxChi && !theEndIsNear) {
+      if(tcc.dbgStp) mf::LogVerbatim("TC")<<"  Last try. Drop last TP "<<lastTP.FitChi<<" NTPsFit "<<lastTP.NTPsFit;
+      UnsetUsedHits(slc, lastTP);
+      DefineHitPos(slc, lastTP);
+      SetEndPoints(tj);
+      lastPt = tj.EndPt[1];
+      FitTraj(slc, tj);
+      tj.MaskedLastTP = true;
+    }
 
     if(tj.NeedsUpdate) UpdateTjChgProperties("UT", slc, tj, tcc.dbgStp);
 
@@ -953,6 +972,7 @@ namespace tca {
     }
 
     TrajPoint& tp = tj.Pts[ipt];
+    tp.ParentID = tj.ID;
     std::vector<unsigned int> closeHits;
     unsigned int lastPtWithUsedHits = tj.EndPt[1];
 
@@ -1118,6 +1138,7 @@ namespace tca {
 
     if(ipt > tj.Pts.size() - 1) return;
     TrajPoint& tp = tj.Pts[ipt];
+    tp.ParentID = tj.ID;
     tp.Hits.clear();
     tp.UseHit.reset();
     sigOK = false;

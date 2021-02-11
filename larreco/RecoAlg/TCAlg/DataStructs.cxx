@@ -18,6 +18,7 @@ namespace tca {
     "SmallAng3D",
     "KillBadPts3D",
     "Mat3D",
+    "DidPID3D",
     "MaskHits",
     "MaskBadTPs",
     "Michel",
@@ -80,7 +81,8 @@ namespace tca {
     "EndBragg",
     "EndBraggChkd",
     "EndOutFV",
-    "EndNoFitVx"
+    "EndNoFitVx",
+    "End2VConflict"
   };
 
   const std::vector<std::string> VtxBitNames {

@@ -48,7 +48,6 @@ namespace tca {
     std::vector<int> dtrs;
     for (auto& dtj : slc.tjs) {
       if (dtj.AlgMod[kKilled]) continue;
-      if (dtj.ParentID != muTj.ID) continue;
       dtrs.push_back(dtj.ID);
       if (!dtj.AlgMod[kDeltaRay]) continue;
       if (prt) mf::LogVerbatim("TC") << "MakeHaloTj: Killing delta-ray T" << dtj.ID;
@@ -94,7 +93,6 @@ namespace tca {
     tj.TotChg = 0;
     tj.ChgRMS = 0;
     tj.EndPt[0] = 0;
-    tj.ParentID = muTj.ID;
     tj.AlgMod.reset();
     tj.AlgMod[kHaloTj] = true;
     // start a list of tjs that have points near the muon
@@ -220,75 +218,6 @@ namespace tca {
     } // ii
     return codeList[codeIndex];
   } // PDGCodeVote
-
-  /////////////////////////////////////////
-  int
-  NeutrinoPrimaryTjID(const TCSlice& slc, const Trajectory& tj)
-  {
-    // Returns the ID of the grandparent of this tj that is a primary tj that is attached
-    // to the neutrino vertex. 0 is returned if this condition is not met.
-    if (tj.AlgMod[kKilled] || tj.AlgMod[kHaloTj]) return -1;
-    if (tj.ParentID <= 0) return -1;
-    int primID = PrimaryID(slc, tj);
-    if (primID <= 0 || primID > (int)slc.tjs.size()) return -1;
-
-    // We have the ID of the primary tj. Now see if it is attached to the neutrino vertex
-    auto& ptj = slc.tjs[primID - 1];
-    for (unsigned short end = 0; end < 2; ++end) {
-      if (ptj.VtxID[end] == 0) continue;
-      auto& vx2 = slc.vtxs[ptj.VtxID[end] - 1];
-      if (vx2.Vx3ID == 0) continue;
-      auto& vx3 = slc.vtx3s[vx2.Vx3ID - 1];
-      if (vx3.Neutrino) return primID;
-    } // end
-    return -1;
-  } // NeutrinoPrimaryTjUID
-
-  /////////////////////////////////////////
-  int
-  PrimaryID(const TCSlice& slc, const Trajectory& tj)
-  {
-    // Returns the ID of the grandparent trajectory of this trajectory that is a primary
-    // trajectory (i.e. whose ParentID = 0).
-    if (tj.AlgMod[kKilled] || tj.AlgMod[kHaloTj]) return -1;
-    if (tj.ParentID < 0 || tj.ParentID > (int)slc.tjs.size()) return -1;
-    if (tj.ParentID == 0) return tj.ID;
-    int parid = tj.ParentID;
-    for (unsigned short nit = 0; nit < 10; ++nit) {
-      if (parid < 1 || parid > (int)slc.tjs.size()) break;
-      auto& tj = slc.tjs[parid - 1];
-      if (tj.ParentID < 0 || tj.ParentID > (int)slc.tjs.size()) return -1;
-      if (tj.ParentID == 0) return tj.ID;
-      parid = tj.ParentID;
-    } // nit
-    return -1;
-  } // PrimaryID
-
-  /////////////////////////////////////////
-  int
-  PrimaryUID(const TCSlice& slc, const PFPStruct& pfp)
-  {
-    // returns the UID of the most upstream PFParticle (that is not a neutrino)
-
-    if (int(pfp.ParentUID) == pfp.UID || pfp.ParentUID <= 0) return pfp.ID;
-    int paruid = pfp.ParentUID;
-    int dtruid = pfp.UID;
-    unsigned short nit = 0;
-    while (true) {
-      auto slcIndx = GetSliceIndex("P", paruid);
-      auto& parent = slices[slcIndx.first].pfps[slcIndx.second];
-      // found a neutrino
-      if (parent.PDGCode == 14 || parent.PDGCode == 12) return dtruid;
-      // found a primary PFParticle?
-      if (parent.ParentUID == 0) return parent.UID;
-      if (int(parent.ParentUID) == parent.UID) return parent.UID;
-      dtruid = parent.UID;
-      paruid = parent.ParentUID;
-      if (paruid < 0) return 0;
-      ++nit;
-      if (nit == 10) return 0;
-    }
-  } // PrimaryUID
 
   /////////////////////////////////////////
   float
@@ -961,8 +890,6 @@ namespace tca {
     // increment the global ID
     ++evt.globalT_UID;
     tj.UID = evt.globalT_UID;
-    // Don't clobber the ParentID if it was defined by the calling function
-    if (tj.ParentID == 0) tj.ParentID = trID;
     slc.tjs.push_back(tj);
     if (tcc.modes[kModeDebug] && tcc.dbgSlc && debug.Hit != UINT_MAX) {
       // print some debug info
@@ -1845,7 +1772,7 @@ namespace tca {
     if (splittingMuon) SetPDGCode(slc, newTj);
     if (ivx < slc.vtxs.size()) newTj.VtxID[0] = slc.vtxs[ivx].ID;
     newTj.AlgMod[kSplit] = true;
-    newTj.ParentID = 0;
+    newTj.ParentID = tj.ID;
     slc.tjs.push_back(newTj);
 
     if (prt) {
@@ -4271,10 +4198,7 @@ namespace tca {
     }
     // Transfer some of the AlgMod bits
     if (tj2.AlgMod[kMichel]) tj1.AlgMod[kMichel] = true;
-    if (tj2.AlgMod[kDeltaRay]) {
-      tj1.AlgMod[kDeltaRay] = true;
-      tj1.ParentID = tj2.ParentID;
-    }
+    if (tj2.AlgMod[kDeltaRay]) tj1.AlgMod[kDeltaRay] = true;
     // keep track of the IDs before they are clobbered
     int tj1ID = tj1.ID;
     int tj2ID = tj2.ID;
@@ -4435,7 +4359,7 @@ namespace tca {
     }
     tj.StepDir = stepdir;
     tj.CTP = tCTP;
-    tj.ParentID = -1;
+    tj.ParentID = 0;
     tj.Strategy.reset();
     tj.Strategy[kNormal] = true;
 

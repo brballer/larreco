@@ -30,8 +30,6 @@ namespace detinfo {
   class DetectorPropertiesData;
 }
 
-// ROOT libraries
-#include "TMVA/Reader.h"
 class TTree;
 
 namespace tca {
@@ -47,6 +45,7 @@ namespace tca {
 
     void reconfigure(fhicl::ParameterSet const& pset);
 
+    void GetdEdxTemplates(std::string const& fileName);
     bool SetInputHits(std::vector<recob::Hit> const& inputHits, unsigned int run, unsigned int event);
     void SetInputSpts(std::vector<recob::SpacePoint> const& sptHandle) { evt.sptHandle = &sptHandle; }
     void SetSourceHits(std::vector<recob::Hit> const& srcHits);
@@ -103,11 +102,7 @@ namespace tca {
   private:
     recob::Hit MergeTPHitsOnWire(std::vector<unsigned int>& tpHits) const;
 
-    // SHOWER VARIABLE TREE
-    TTree* showertree;
-
     calo::CalorimetryAlg fCaloAlg;
-    TMVA::Reader fMVAReader;
 
     std::vector<unsigned int> fAlgModCount;
 

@@ -20,14 +20,16 @@
 
 #include "messagefacility/MessageLogger/MessageLogger.h"
 
+#include "TFile.h"
+#include "TProfile.h"
+
 namespace tca {
 
   //------------------------------------------------------------------------------
 
   TrajClusterAlg::TrajClusterAlg(fhicl::ParameterSet const& pset)
-    : fCaloAlg(pset.get<fhicl::ParameterSet>("CaloAlg")), fMVAReader("Silent")
+    : fCaloAlg(pset.get<fhicl::ParameterSet>("CaloAlg"))
   {
-    tcc.showerParentReader = &fMVAReader;
 
     bool badinput = false;
     // set all configurable modes false
@@ -81,6 +83,8 @@ namespace tca {
     // don't produce neutrino PFParticles, etc unless desired
     tcc.modes[kModeNeutrino] = pset.get<bool>("NeutrinoMode", false);
     pset.get_if_present<std::vector<float>>("NeutralVxCuts", tcc.neutralVxCuts);
+    std::string templateFile = pset.get<std::string>("dEdxTemplateFile","dEdxrestemplates.root");
+    if(templateFile != "NA") GetdEdxTemplates(templateFile);
     if (tcc.JTMaxHitSep2 > 0) tcc.JTMaxHitSep2 *= tcc.JTMaxHitSep2;
 
     // in the following section we ensure that the fcl vectors are appropriately sized so that later references are valid
@@ -256,6 +260,48 @@ namespace tca {
 
     tcc.caloAlg = &fCaloAlg;
   }
+
+  ////////////////////////////////////////////////
+  void
+  TrajClusterAlg::GetdEdxTemplates(std::string const& fileName)
+  {
+    // transfer the contents of the dE/dx vs ResidualRange root file into
+    // local vectors for muons, pions, kaons and protons
+
+    cet::search_path sp("FW_SEARCH_PATH");
+    std::string rootFile;
+    if(!sp.find_file(fileName, rootFile)) {
+      std::cout<<"cannot find the root template file: "<<fileName<<"\n";
+      throw cet::exception("Chi2ParticleID") << "cannot find the root template file: \n"
+                                            << fileName
+                                            << "\n bail ungracefully.\n";
+    }
+    TFile *file = TFile::Open(rootFile.c_str());
+    std::vector<TProfile*> tprofs(4);
+    tprofs[0] = (TProfile*)file->Get("dedx_range_mu");
+    tprofs[2] = (TProfile*)file->Get("dedx_range_ka");
+    tprofs[1] = (TProfile*)file->Get("dedx_range_pi");
+    tprofs[3] = (TProfile*)file->Get("dedx_range_pro");
+    tcc.dEdxRRBinWidth = tprofs[0]->GetBinCenter(2) - tprofs[0]->GetBinCenter(1);
+    // size for muon, pion, kaon and proton templates
+    tcc.dEdxRR.resize(4);
+    tcc.dEdxRRErr2.resize(4);
+    // Code adapted from larana Chi2PIDAlg
+    for (unsigned short ptcl = 0; ptcl < 4; ++ptcl) {
+      tcc.dEdxRR[ptcl].resize(tprofs[ptcl]->GetNbinsX());
+      tcc.dEdxRRErr2[ptcl].resize(tprofs[ptcl]->GetNbinsX());
+      double binErr2 = 1;
+      for (unsigned short bin = 0; bin < tcc.dEdxRR[ptcl].size(); ++bin) {
+        double dedx = tprofs[ptcl]->GetBinContent(bin);
+        tcc.dEdxRR[ptcl][bin] = dedx;
+        double binErr = tprofs[ptcl]->GetBinError(bin);
+        if (binErr > 1E-6) binErr2 = binErr * binErr;
+        double dedxErr = 0.04231+0.0001783*dedx*dedx; //resolution on dE/dx
+        tcc.dEdxRRErr2[ptcl][bin] = binErr2 + dedxErr * dedxErr;
+      } // bin
+    } // ptcl
+
+  } // GetdEdxTemplates
 
   ////////////////////////////////////////////////
   bool

@@ -112,7 +112,7 @@ namespace tca {
                        detinfo::DetectorPropertiesData const& detProp,
                        TCSlice& slc, PFPStruct& pfp, bool prt);
   SectionFit DefineBareSF(Point3_t startPos, Point3_t endPos);
-  bool FindEndPos(detinfo::DetectorClocksData const& clockData,
+  bool SetEndPos(detinfo::DetectorClocksData const& clockData,
                   detinfo::DetectorPropertiesData const& detProp,
                   TCSlice& slc, PFPStruct& pfp, bool prt);
   void Reverse(TCSlice& slc, PFPStruct& pfp);
@@ -130,7 +130,8 @@ namespace tca {
   double PosSep2(const Point3_t& pos1, const Point3_t& pos2);
   bool SetMag(Vector3_t& v1, double mag);
   void SetDirection(detinfo::DetectorClocksData const& clockData,
-                detinfo::DetectorPropertiesData const& detProp,TCSlice& slc, PFPStruct& pfp);
+                detinfo::DetectorPropertiesData const& detProp,
+                TCSlice& slc, PFPStruct& pfp, bool prt);
   void SetPFPdEdx(detinfo::DetectorClocksData const& clockData,
                 detinfo::DetectorPropertiesData const& detProp,
                 const TCSlice& slc,
@@ -155,8 +156,11 @@ namespace tca {
              TCSlice& slc, PFPStruct& pfp);
   void FindResidualRangeOffsets(detinfo::DetectorClocksData const& clockData,
                                 detinfo::DetectorPropertiesData const& detProp, 
-                                TCSlice& slc, PFPStruct& pfp, TP3D const& stopTP3D, 
-                                float& minOffset, float& maxOffset);
+                                TCSlice& slc, PFPStruct& pfp, Point3_t const& stopPos, 
+                                Vector3_t const& stopDir, float& minOffset,
+                                float& maxOffset, bool prt);
+  void FlagLastTPInPlane(detinfo::DetectorClocksData const& clockData,
+                         TCSlice& slc, PFPStruct& pfp);
   void CalcChi2PID(std::vector<CaloStruct> const& caloVec,
                    unsigned short ptcl, float& offset, float& chi2);
   TP3D CreateTP3D(detinfo::DetectorPropertiesData const& detProp, 

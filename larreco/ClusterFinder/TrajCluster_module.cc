@@ -237,6 +237,7 @@ namespace cluster {
     // collection of hits with the requirement that all hits in a slice reside in
     // one TPC
 
+    std::cout<<"enter TCM\n";
     // list of the slices in the event
     std::vector<art::Ptr<recob::Slice>> slices;
     std::vector<int> slcIDs;
@@ -311,6 +312,7 @@ namespace cluster {
             std::cout << " RMS " << hit.RMS();
             std::cout << " Multiplicity " << hit.Multiplicity();
             std::cout << " GoodnessOfFit " << hit.GoodnessOfFit();
+            std::cout << " Integral " << hit.Integral();
             std::cout << "\n";
             tca::debug.Hit = iht;
             break;
@@ -802,6 +804,7 @@ namespace cluster {
     std::unique_ptr<std::vector<recob::Track> > tcol(new std::vector<recob::Track>(std::move(trkCol)));
     std::unique_ptr<std::vector<recob::SpacePoint> > spcol(new std::vector<recob::SpacePoint>(std::move(sptCol)));
     std::unique_ptr<std::vector<recob::Seed> > sdcol(new std::vector<recob::Seed>(std::move(sedCol)));
+    std::cout<<" TCM put in event\n";
 
     // move the cluster collection and the associations into the event:
     if (fHitModuleLabel != "NA") {
@@ -838,6 +841,7 @@ namespace cluster {
     evt.put(std::move(slc_cls_assn));
     evt.put(std::move(slc_pfp_assn));
     evt.put(std::move(slc_hit_assn));
+    std::cout<<"leave TCM\n";
   } // TrajCluster::produce()
 
   ////////////////////////////////////////////////

@@ -4342,6 +4342,11 @@ namespace tca {
             unsigned short pass)
   {
     // Start a simple (seed) trajectory going from (fromWire, toTick) to (toWire, toTick).
+    if (fromWire < -0.4 || toWire < -0.4) return false;
+    unsigned short plane = DecodeCTP(tCTP).Plane;
+    if (fromWire > (float)slc.lastWire[plane]) return false;
+    if (toWire > (float)slc.lastWire[plane]) return false;
+    if (fromTick < 0 || toTick < 0) return false;
 
     // decrement the work ID so we can use it for debugging problems
     --evt.WorkID;

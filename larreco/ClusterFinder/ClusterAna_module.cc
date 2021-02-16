@@ -209,6 +209,7 @@ namespace cluster {
 
     // look for a cluster -> PFParticle assn
     art::FindManyP<recob::PFParticle> fmpfp(allCls, evt, fClusterModuleLabel);
+    auto allPFP = evt.getValidHandle<std::vector<recob::PFParticle>>(fClusterModuleLabel);
 
     art::ServiceHandle<cheat::BackTrackerService const> bt_serv;
     art::ServiceHandle<geo::Geometry const> geom;
@@ -227,6 +228,13 @@ namespace cluster {
           for(auto mcpi : mcpiList) {
             if((*mcps)[mcpi].TrackId() != tid) continue;
             hitMCPIndex[iht] = mcpi;
+/* temp dump low dE/dx hits to a CSV file to check dE/dx uncertainties
+            if (tide.energyFrac > 0.95 && tide.energy < 2) {
+              std::cout<<"tide, "<<(*mcps)[mcpi].PdgCode();
+              std::cout<<", "<<std::setprecision(5)<<tide.energy<<", "<<tide.energyFrac;
+              std::cout<<", "<<hit.Integral()<<"\n";
+            }
+*/
             ++nMatched;
             break;
           }
@@ -330,6 +338,25 @@ namespace cluster {
         } // match
       } // icl
     } // tpc
+    // now decide which PFParticle matches to each MCParticle in mcpiList
+    std::vector<unsigned int> mcpToPFP(mcpiList.size(), UINT_MAX);
+    if (fmpfp.isValid()) {
+      for (auto& match : matches) {
+        if (match.mcpi == UINT_MAX) continue;
+        unsigned int pfpi = UINT_MAX;
+        unsigned short cnt = 0;
+        for(unsigned int plane = 0; plane < geom->Nplanes(); ++plane) {
+          if (match.firstHit[plane] >= (*allHits).size()) continue;
+          if (match.mcpTruHitCount[plane] < 3) continue;
+          auto& pfps = fmpfp.at(match.clsIndex[plane]);
+          if (pfps.empty()) continue;
+          if (pfpi == UINT_MAX) pfpi = pfps[0].key();
+          if (pfpi == pfps[0].key()) ++cnt;
+        } // plane
+        if (cnt > 1) mcpToPFP[match.mcpi] = pfpi;
+      } // match
+    } // isValid
+
     if (fPrintLevel > 1) {
       mf::LogVerbatim myprt("ClusterAna");
       if(nPrtSel < 500) {
@@ -343,16 +370,18 @@ namespace cluster {
           myprt << ", T " << TMeV << " MeV";
           myprt << ", Process " << mcp.Process();
           myprt << ", in TPC " << match.tpc;
+          if (mcpToPFP[match.mcpi] != UINT_MAX && allPFP.isValid()) {
+            myprt << " -> pfp.Self " << mcpToPFP[match.mcpi];
+            auto& pfp = (*allPFP)[mcpToPFP[match.mcpi]];
+            myprt << " PDGCode " << pfp.PdgCode();
+          }
           myprt << "\n";
           for(unsigned int plane = 0; plane < geom->Nplanes(); ++plane) {
             if (match.firstHit[plane] >= (*allHits).size()) continue;
             if (match.mcpTruHitCount[plane] < 3) continue;
             unsigned int first, last;
             FindFirstLastWire(allHits, hitMCPIndex, match, plane, first, last);
-            if (first >= (*allHits).size()) {
-              myprt<<" oops "<<match.mcpi<<" "<<plane<<" first "<<match.firstHit[plane]<<" "<<match.lastHit[plane]<<"\n";
-              continue;
-            }
+            if (first >= (*allHits).size()) continue;
             myprt << "    Plane " << plane;
             auto& fhit = (*allHits)[first];
             myprt << " true hits range " << PrintHit(fhit);

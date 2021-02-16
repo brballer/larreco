@@ -144,8 +144,8 @@ namespace tca {
     if(tj.AlgMod[kJunkTj]) return;
     // don't do anything if this tj has been modified by ReversePropagate
     if(tj.AlgMod[kRvPrp]) return;
-    // don't bother with really short tjs
-    if(tj.Pts.size() < 5) return;
+    // don't attempt this with short tjs
+    if(tj.Pts.size() < 10) return;
 
     if(!tcc.useAlg[kNewCuts]) {
       ChkBeginOld(slc, tj);
@@ -208,6 +208,11 @@ namespace tca {
     }
     if(firstGoodPt == tj.EndPt[0]) return;
     ++firstGoodPt;
+    // require at least 5 points in the trajectory after trimming the beginning
+    unsigned short nleft = 0;
+    for (unsigned short ipt = firstGoodPt + 1; ipt <= tj.EndPt[1]; ++ipt)
+        if (tj.Pts[ipt].Chg > 0) ++nleft;
+    if (nleft < 5) return;
 
     // lop off the points before firstPtFit and reverse propagate
     if(tcc.dbgStp) mf::LogVerbatim("TC")<<"  clobber TPs "<<PrintPos(slc, tj.Pts[0])

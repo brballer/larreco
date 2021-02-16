@@ -288,10 +288,10 @@ namespace tca {
     std::array<Point3_t, 2> EndPos{{0, 0}};
     int BestPlane{-1};
     int PDGCode{-1};
+    float PIDChi2{0};
     std::vector<int> DtrUIDs;
     size_t ParentUID{0}; // Parent PFP UID (or 0 if no parent exists)
     geo::TPCID TPCID;
-    float CosmicScore{0};
     int ID{0};
     int UID{0};                              // unique global ID
     unsigned short MVI;                      // matVec index for detailed debugging
@@ -310,14 +310,7 @@ namespace tca {
   struct CaloStruct {
     float RR;       // residual range
     float dEdx;     // dE/dx
-    float weight;   // matching weight
-  };
-
-  struct CRTreeVars {
-    std::vector<int> cr_origin;
-    std::vector<float> cr_pfpxmin;
-    std::vector<float> cr_pfpxmax;
-    std::vector<float> cr_pfpyzmindis;
+    float weight;   // template matching weight
   };
 
   // Algorithm modification bits
@@ -541,8 +534,6 @@ namespace tca {
     int ID; ///< ID of the recob::Slice (not the sub-slice)
     // The variables below do change in size from event to event
 
-    // Save histograms to develop cosmic removal tools
-    CRTreeVars crt;
     std::vector<TCHit> slHits;
     std::vector<Trajectory> tjs; ///< vector of all trajectories in each plane
     std::vector<Tj2Pt> mallTraj; ///< vector of trajectory points ordered by increasing X

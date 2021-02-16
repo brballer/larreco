@@ -296,7 +296,8 @@ namespace tca {
         tcc.dEdxRR[ptcl][bin] = dedx;
         double binErr = tprofs[ptcl]->GetBinError(bin);
         if (binErr > 1E-6) binErr2 = binErr * binErr;
-        double dedxErr = 0.04231+0.0001783*dedx*dedx; //resolution on dE/dx
+//        double dedxErr = 0.04231+0.0001783*dedx*dedx; //resolution on dE/dx
+        double dedxErr = 0.21 * dedx;
         tcc.dEdxRRErr2[ptcl][bin] = binErr2 + dedxErr * dedxErr;
       } // bin
     } // ptcl

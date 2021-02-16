@@ -1900,6 +1900,160 @@ namespace tca {
   } // ValidTwoPlaneMatch
 
   /////////////////////////////////////////
+<<<<<<< HEAD
+=======
+  void
+  AddPointsInRange(detinfo::DetectorClocksData const& clockData,
+                   detinfo::DetectorPropertiesData const& detProp,
+                   TCSlice& slc,
+                   PFPStruct& pfp,
+                   unsigned short fromPt,
+                   unsigned short toPt,
+                   CTP_t inCTP,
+                   float maxPull,
+                   unsigned short& nWires,
+                   unsigned short& nAdd,
+                   bool prt)
+  {
+    // Try to insert 2D trajectory points into the 3D trajectory point vector pfp.TP3Ds.
+    // This function inserts new TP3Ds and sets the NeedsUpdate flags true.
+    // The calling function should call Update
+    // Note that maxPull is used for the charge pull as well as the position pull
+    nWires = 0;
+    nAdd = 0;
+    if (fromPt > toPt) return;
+    if (toPt >= pfp.TP3Ds.size()) toPt = pfp.TP3Ds.size() - 1;
+
+    // Find the average dE/dx so we can apply a generous min/max dE/dx cut
+    float dEdXAve = 0;
+    float dEdXRms = 0;
+    Average_dEdX(clockData, detProp, slc, pfp, dEdXAve, dEdXRms);
+    float dEdxMin = 0.5, dEdxMax = 50.;
+    if (dEdXAve > 0.5) {
+      dEdxMin = dEdXAve - maxPull * dEdXRms;
+      if (dEdxMin < 0.5) dEdxMin = 0.5;
+      dEdxMax = dEdXAve + maxPull * dEdXRms;
+      if (dEdxMax > 50.) dEdxMax = 50.;
+    } // dEdXAve > 0.5
+
+    // Split the range into sub-ranges; one for each SectionFit and make 2D TPs at the
+    // start of each sub-range.
+    std::vector<TrajPoint> sfTPs;
+    // form a list of TPs that are used in this CTP
+    std::vector<std::pair<int, unsigned short>> tpUsed;
+    for (auto& tp3d : pfp.TP3Ds) {
+      if (tp3d.CTP != inCTP) continue;
+      tpUsed.push_back(std::make_pair(tp3d.TjID, tp3d.TPIndex));
+    } // tp3d
+    unsigned int toWire = 0;
+    unsigned int fromWire = UINT_MAX;
+
+    unsigned short inSF = USHRT_MAX;
+    unsigned short pln = DecodeCTP(inCTP).Plane;
+    for (unsigned short ipt = 0; ipt < pfp.TP3Ds.size(); ++ipt) {
+      auto& tp3d = pfp.TP3Ds[ipt];
+      // Skip if not the last point and we already found a point in this SectionFit
+      if (ipt < pfp.TP3Ds.size() - 1 && tp3d.SFIndex == inSF) continue;
+      unsigned int wire;
+      if (tp3d.CTP == inCTP) {
+        // Found the first tp3d in a new SectionFit and it is in the right CTP
+        auto& tp = slc.tjs[tp3d.TjID - 1].Pts[tp3d.TPIndex];
+        sfTPs.push_back(tp);
+        wire = std::nearbyint(tp.Pos[0]);
+        if (wire >= slc.nWires[pln]) break;
+      }
+      else {
+        // Found the first tp3d in a new SectionFit and it is in a different CTP.
+        // Make a TP in the right CTP
+        auto tp = MakeBareTP(detProp, slc, tp3d.Pos, tp3d.Dir, inCTP);
+        wire = std::nearbyint(tp.Pos[0]);
+        if (wire >= slc.nWires[pln]) break;
+        sfTPs.push_back(tp);
+      }
+      if (wire < fromWire) fromWire = wire;
+      if (wire > toWire) toWire = wire;
+      inSF = tp3d.SFIndex;
+    } // tp3d
+    if (sfTPs.empty()) return;
+    // reverse the vector if necessary so the wires will be in increasing order
+    if (sfTPs.size() > 1 && sfTPs[0].Pos[0] > sfTPs.back().Pos[0]) {
+      std::reverse(sfTPs.begin(), sfTPs.end());
+    }
+
+    // set a generous search window in WSE units
+    float window = 50;
+
+    if (prt)
+      mf::LogVerbatim("TC") << "APIR: inCTP " << inCTP << " fromWire " << fromWire << " toWire "
+                            << toWire;
+
+    // iterate over the sub-ranges
+    for (unsigned short subr = 0; subr < sfTPs.size(); ++subr) {
+      auto& fromTP = sfTPs[subr];
+      unsigned int toWireInSF = toWire;
+      if (subr < sfTPs.size() - 1) toWireInSF = std::nearbyint(sfTPs[subr + 1].Pos[0]);
+      SetAngleCode(fromTP);
+      unsigned int fromWire = std::nearbyint(fromTP.Pos[0]);
+      if (fromWire > toWire) continue;
+      if (prt)
+        mf::LogVerbatim("TC") << " inCTP " << inCTP << " subr " << subr << " fromWire " << fromWire
+                              << " toWireInSF " << toWireInSF;
+      for (unsigned int wire = fromWire; wire <= toWireInSF; ++wire) {
+        MoveTPToWire(fromTP, (float)wire);
+        if (!FindCloseHits(slc, fromTP, window, kUsedHits)) continue;
+        if (fromTP.Environment[kEnvNotGoodWire]) continue;
+        float bestPull = maxPull;
+        TP3D bestTP3D;
+        for (auto iht : fromTP.Hits) {
+          if (slc.slHits[iht].InTraj <= 0) continue;
+          // this hit is used in a TP so find the tpIndex
+          auto& utj = slc.tjs[slc.slHits[iht].InTraj - 1];
+          unsigned short tpIndex = 0;
+          for (tpIndex = utj.EndPt[0]; tpIndex <= utj.EndPt[1]; ++tpIndex) {
+            auto& utp = utj.Pts[tpIndex];
+            if (utp.Chg <= 0) continue;
+            // This doesn't check for UseHit true but that is probably ok here
+            if (std::find(utp.Hits.begin(), utp.Hits.end(), iht) != utp.Hits.end()) break;
+          } // ipt
+          if (tpIndex > utj.EndPt[1]) continue;
+          // see if it is already used in this pfp
+          std::pair<int, unsigned short> tppr = std::make_pair(utj.ID, tpIndex);
+          if (std::find(tpUsed.begin(), tpUsed.end(), tppr) != tpUsed.end()) continue;
+          tpUsed.push_back(tppr);
+          auto& utp = utj.Pts[tpIndex];
+          // see if it is used in a different PFP
+          if (utp.InPFP > 0) continue;
+          // or if it overlaps another trajectory near a 2D vertex
+          if (utp.Environment[kEnvOverlap]) continue;
+          auto newTP3D = CreateTP3D(detProp, slc, utj.ID, tpIndex);
+          if (!SetSection(detProp, slc, pfp, newTP3D)) continue;
+          // set the direction to the direction of the SectionFit it is in so we can calculate dE/dx
+          newTP3D.Dir = pfp.SectionFits[newTP3D.SFIndex].Dir;
+          float pull = PointPull(pfp, newTP3D);
+          float dedx = dEdx(clockData, detProp, slc, newTP3D);
+          // Require a good pull and a consistent dE/dx (MeV/cm)
+          bool useIt = (pull < bestPull && dedx > dEdxMin && dedx < dEdxMax);
+          if (!useIt) continue;
+          bestTP3D = newTP3D;
+          bestPull = pull;
+        } // iht
+        if (bestPull < maxPull) {
+          if (prt && bestPull < 10) {
+            mf::LogVerbatim myprt("TC");
+            auto& tp = slc.tjs[bestTP3D.TjID - 1].Pts[bestTP3D.TPIndex];
+            myprt << "APIR: P" << pfp.ID << " added TP " << PrintPos(slc, tp);
+            myprt << " pull " << std::fixed << std::setprecision(2) << bestPull;
+            myprt << " dx " << bestTP3D.TPX - bestTP3D.Pos[0] << " in section " << bestTP3D.SFIndex;
+          }
+          if (InsertTP3D(pfp, bestTP3D) == USHRT_MAX) continue;
+          ++nAdd;
+        } // bestPull < maxPull
+      }   // wire
+    }     // subr
+  }       // AddPointsInRange
+
+  /////////////////////////////////////////
+>>>>>>> develop
   unsigned short
   InsertTP3D(PFPStruct& pfp, TP3D& tp3d)
   {

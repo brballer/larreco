@@ -95,8 +95,14 @@ namespace tca {
     ClearResults()
     {
       slices.resize(0);
+      seeds.resize(0);
+      tjfs.resize(0);
+      evt.TPCID.TPC = UINT_MAX;
       evt.sptHits.resize(0);
       evt.wireHitRange.resize(0);
+      evt.tpcSrcHitRange.resize(0);
+      evt.goodWire.resize(0);
+      evt.wireIntersections.resize(0);
     }
 
   private:

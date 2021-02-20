@@ -271,10 +271,9 @@ namespace tca {
     cet::search_path sp("FW_SEARCH_PATH");
     std::string rootFile;
     if(!sp.find_file(fileName, rootFile)) {
-      std::cout<<"cannot find the root template file: "<<fileName<<"\n";
-      throw cet::exception("Chi2ParticleID") << "cannot find the root template file: \n"
-                                            << fileName
-                                            << "\n bail ungracefully.\n";
+      mf::LogWarning("TC")<<"dE/dx template file "<<fileName<<" not found. Particle ID disabled\n";
+      tcc.dEdxRRBinWidth = 0;
+      return;
     }
     TFile *file = TFile::Open(rootFile.c_str());
     std::vector<TProfile*> tprofs(4);
@@ -301,6 +300,7 @@ namespace tca {
         tcc.dEdxRRErr2[ptcl][bin] = binErr2 + dedxErr * dedxErr;
       } // bin
     } // ptcl
+    file->Close();
 
   } // GetdEdxTemplates
 
@@ -325,8 +325,6 @@ namespace tca {
     evt.globalP_UID = 0;
     evt.global2S_UID = 0;
     evt.global3S_UID = 0;
-    // find the average hit RMS using the full hit collection and define the
-    // configuration for the current TPC
 
     if(tcc.modes[kModeDebug] && evt.eventsProcessed == 0) PrintDebugMode();
     ++evt.eventsProcessed;
@@ -999,10 +997,15 @@ namespace tca {
     // now merge hits in each sub-list.
     for (unsigned short indx = 0; indx < wireHits.size(); ++indx) {
       auto& hitsOnWire = wireHits[indx];
-      newHitCol.push_back(MergeTPHitsOnWire(hitsOnWire));
-      for (unsigned short ii = 0; ii < hitsOnWire.size(); ++ii) {
-        newHitAssns[hitsOnWire[ii]] = newHitCol.size() - 1;
-      }
+      if (!hitsOnWire.empty()) {
+        auto recobHit = MergeTPHitsOnWire(hitsOnWire);
+        if (recobHit.Channel() != UINT_MAX) {
+          newHitCol.push_back(recobHit);
+          for (unsigned short ii = 0; ii < hitsOnWire.size(); ++ii) {
+            newHitAssns[hitsOnWire[ii]] = newHitCol.size() - 1;
+          } // ii
+        } // valid hit
+      } // 
     } // hitsOnWire
 
     return;

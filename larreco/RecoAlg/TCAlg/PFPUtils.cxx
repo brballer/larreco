@@ -248,14 +248,7 @@ namespace tca {
       }   // prt
       MakePFParticles(clockData, detProp, slc, matVec, nit);
     } // nit
-/*
-    // a last debug print
-    if (tcc.dbgPFP && debug.MVI != UINT_MAX) {
-      for (auto& pfp : slc.pfps)
-        if (tcc.dbgPFP && pfp.MVI == debug.MVI) PrintTP3Ds(clockData, detProp, "FPFP", slc, pfp, -1);
-    } // last debug print
-*/
-    slc.mallTraj.resize(0);
+//    slc.mallTraj.resize(0);
 
     if(tcc.dbgPFP && tcc.dbgSummary) {
       // print a list of Tjs that weren't used to make PFPs
@@ -324,7 +317,8 @@ namespace tca {
         continue;
       }
       // fit all the points to get the general direction
-      if (!FitSection(clockData, detProp, slc, pfp, 0)) {
+      unsigned short sfi = 0;
+      if (!FitSection(clockData, detProp, slc, pfp, sfi)) {
         if (prt) {
           mf::LogVerbatim("TC") << " FitSection failed\n";
           PrintTP3Ds(clockData, detProp, "Fail", slc, pfp, -1);
@@ -402,16 +396,12 @@ namespace tca {
       // plane if the projection of the pfp results in a large angle where 2D reconstruction
       // is likely to be poor
       FillGaps3D(clockData, detProp, slc, pfp, prt);
+      // consistency check
+      if (pfp.TP3Ds.size() < 5) continue;
       // Check the TP3D -> TP assn, resolve conflicts and set TP -> InPFP
       if (!ReconcileTPs(slc, pfp, prt)) continue;
       // Look for mis-placed 2D and 3D vertices
       ReconcileVertices(slc, pfp, prt);
-      // Set isGood
-      for(auto& tp3d : pfp.TP3Ds) {
-        if(tp3d.Flags[kTP3DBad] || tp3d.TPIndex == USHRT_MAX) continue;
-        auto& tp = slc.tjs[tp3d.TjID - 1].Pts[tp3d.TPIndex];
-        if(tp.Environment[kEnvOverlap] || tp.Environment[kEnvUnusedHits]) tp3d.Flags[kTP3DGood] = false;
-      } // tp3d
       SetPFPdEdx(clockData, detProp, slc, pfp);
       // Set the direction using dE/dx
       SetDirection(clockData, detProp, slc, pfp, prt);
@@ -424,8 +414,9 @@ namespace tca {
         if(tcc.dbgPFP) mf::LogVerbatim("TC")<<" Store failed P"<<pfp.ID;
         break;
       }
-      if(tcc.dbgPFP && pfp.MVI == debug.MVI && matVec_Iter == debug.MVI_Iter) 
-          PrintTP3Ds(clockData, detProp, "STORE", slc, pfp, -1);
+      if(tcc.dbgPFP && pfp.MVI == debug.MVI && matVec_Iter == debug.MVI_Iter) {
+        PrintTP3Ds(clockData, detProp, "STORE", slc, slc.pfps.back(), -1);
+      }
     }   // indx (iterate over matchVec entries)
     slc.mallTraj.resize(0);
   } // MakePFParticles
@@ -1172,7 +1163,8 @@ namespace tca {
         tp3d.Flags[kTP3DGood] = true;
       }
       auto& sf = pfp.SectionFits[0];
-      if (!FitSection(clockData, detProp, slc, pfp, 0)) { return false; }
+      unsigned short sfi = 0;
+      if (!FitSection(clockData, detProp, slc, pfp, sfi)) { return false; }
       if (sf.ChiDOF < tcc.match3DCuts[5]) return true;
     } // > 1 SectionFit
     // sort by distance from the start
@@ -1555,7 +1547,6 @@ namespace tca {
     // TODO: is there a correct way to do this?
     sf.DirErr[1] = 3 * sf.DirErr[0];
     sf.DirErr[2] = 3 * sf.DirErr[0];
-//    std::cout<<"Fit "<<tp3ds.size()<<" ChiDOF "<<sf.ChiDOF<<" npts "<<sf.NPts<<"\n";
     return sf;
 
   } // FitTP3Ds
@@ -1583,8 +1574,7 @@ namespace tca {
     if (sf.ChiDOF < 0) return false;
     chiDOF = sf.ChiDOF;
 
-    pfp.SectionFits[sfIndex] = sf;
-//    std::cout<<"FitRange fromPt "<<fromPt<<" nPtsFit "<<nPtsFit<<" chiDOF "<<sf.ChiDOF<<"\n";
+    if (sfIndex < pfp.SectionFits.size()) pfp.SectionFits[sfIndex] = sf;
     return true;
 
   } // FitPFP
@@ -1742,18 +1732,18 @@ namespace tca {
         auto startTP = MakeBareTP(detProp, slc, pfp.TP3Ds[startPt].Pos, inCTP);
         auto endTP = MakeBareTP(detProp, slc, pfp.TP3Ds[endPt].Pos, inCTP);
         if(startTP.Pos[0] < -0.5 || endTP.Pos[0] < -0.5) {
-          if(prt) std::cout<<"FillGaps3D: Invalid TPs in P"<<pfp.ID
-            <<" "<<startTP.Pos[0]<<" "<<endTP.Pos[0]<<"\n";
+          if(prt) mf::LogWarning("TC")<<"FillGaps3D: Invalid TPs in P"<<pfp.ID
+            <<" "<<startTP.Pos[0]<<" "<<endTP.Pos[0];
           continue;
         }
         float startWire = startTP.Pos[0];
         if(startWire < -0.5 || startWire > slc.nWires[plane]) {
-          if(prt) std::cout<<"FillGaps3D: invalid start wire in P"<<pfp.ID<<" "<<startWire<<"\n";
+          if(prt) mf::LogWarning("TC")<<"FillGaps3D: invalid start wire in P"<<pfp.ID<<" "<<startWire;
           continue;
         }
         float endWire = endTP.Pos[0];
         if(endWire < -0.5 || endWire > slc.nWires[plane]) {
-          if(prt) std::cout<<"FillGaps3D: invalid start wire in P"<<pfp.ID<<" "<<endWire<<"\n";
+          if(prt) mf::LogWarning("TC")<<"FillGaps3D: invalid start wire in P"<<pfp.ID<<" "<<endWire;
           continue;
         }
         float nChkWires = std::abs(endWire - startWire);
@@ -2133,9 +2123,6 @@ namespace tca {
     // Add the points associated with the Tjs that were used to create the PFP
     for (auto tid : pfp.TjIDs) {
       auto& tj = slc.tjs[tid - 1];
-      // There is one TP for every hit in a junk Tj so we can skip one, if there is only one
-      // BB Feb 8, 2021. Maybe not a good idea?
-//      if(nJunk == 1 && tj.AlgMod[kJunkTj]) continue;
       // All of the Tj's may be junk, especially for those at very high angle, so the
       // X position of the TP's isn't high quality. Inflate the errors below.
       bool isJunk = tj.AlgMod[kJunkTj];
@@ -2269,14 +2256,14 @@ namespace tca {
           along = -secLen[sfi] / 2;
         } // ipt == sb + 1
         tp3d.SFIndex = sfi;
-        auto& sf = pfp.SectionFits[sfi];
-        ++sf.NPts;
+        ++pfp.SectionFits[sfi].NPts;
         tp3d.along = along;
-        for(unsigned short xyz = 0; xyz < 3; ++xyz) tp3d.Pos[xyz] = sf.Pos[xyz] + along * sf.Dir[xyz];
-        tp3d.Dir = sf.Dir;
+        for(unsigned short xyz = 0; xyz < 3; ++xyz) 
+          tp3d.Pos[xyz] = pfp.SectionFits[sfi].Pos[xyz] + along * pfp.SectionFits[sfi].Dir[xyz];
+        tp3d.Dir = pfp.SectionFits[sfi].Dir;
         along += step;
         double delta = tp3d.Pos[0] - tp3d.TPX;
-        sf.ChiDOF += delta * delta / tp3d.TPXErr2;
+        pfp.SectionFits[sfi].ChiDOF += delta * delta / tp3d.TPXErr2;
         // Assume that all points are good
         tp3d.Flags[kTP3DGood] = true;
         if(sfi == 0) {
@@ -2985,6 +2972,7 @@ namespace tca {
     if (pfp.TP3Ds.size() < 4) return;
     // unset the TP general purpose flag
     for (auto& tp3d : pfp.TP3Ds) {
+      if (tp3d.TjID < 1 || tp3d.TjID > (int)slc.tjs.size()) return;
       auto& tp = slc.tjs[tp3d.TjID - 1].Pts[tp3d.TPIndex];
       tp.Environment[kEnvFlag] = false;
     }
@@ -3781,7 +3769,7 @@ namespace tca {
     if(pfp.Flags[kNeedsUpdate]) myprt<<" NeedsUpdate";
     if(pfp.Flags[kStops]) myprt<<" Stops";
     myprt<<" Algs:";
-    for(unsigned short ib = 0; ib < pAlgModSize; ++ib) {
+    for(unsigned short ib = 0; ib < kAlgBitSize; ++ib) {
       if(pfp.AlgMod[ib]) myprt<<" "<<AlgBitNames[ib];
     } // ib
     myprt << "\n";

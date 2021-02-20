@@ -63,6 +63,7 @@ standard_trajclusteralg:
    # 0 = matching angle resolution (radians)
    # 1 = matching position resolution (cm)
    # 2 = max angle-position figure of merit
+   dEdxTemplateFile: "dEdxrestemplates.root" # needed for particle ID
    SkipAlgs: [ ]   # List of algs that should not be used
    DebugConfig: []
 }

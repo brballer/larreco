@@ -1438,10 +1438,8 @@ namespace tca {
             } else {
               didMerge = MergeAndStore(slc, it2, it1, tcc.dbgMrg);
             }
+            // NOTE: Don't use the tj1  reference after this point
             if(didMerge) {
-              // Set the end merge flag for the killed trajectories to aid tracing merges
-              tj1.AlgMod[kEndMerge] = true;
-              tj2.AlgMod[kEndMerge] = true;
               iterate = true;
             } // Merge and store successfull
             else {
@@ -1511,8 +1509,8 @@ namespace tca {
             aVtx.NTraj = 2;
             aVtx.Pass = slc.tjs[it1].Pass;
             aVtx.Topo = end1 + end2;
-            tj1.AlgMod[kEndMerge] = true;
-            tj2.AlgMod[kEndMerge] = true;
+            slc.tjs[it1].AlgMod[kEndMerge] = true;
+            slc.tjs[it2].AlgMod[kEndMerge] = true;
             if(!StoreVertex(slc, aVtx)) continue;
             SetVx2Score(slc);
             if(prt) {
@@ -1541,8 +1539,8 @@ namespace tca {
               }
               if(didMerge) {
                 // Set the end merge flag for the killed trajectories to aid tracing merges
-                tj1.AlgMod[kEndMerge] = true;
-                tj1.AlgMod[kEndMerge] = true;
+                slc.tjs[it1].AlgMod[kEndMerge] = true;
+                slc.tjs[it2].AlgMod[kEndMerge] = true;
                 iterate = true;
               } // Merge and store successfull
               else {
@@ -1550,7 +1548,7 @@ namespace tca {
               }
             } // OK score
           } // create a vertex
-          if(tj1.AlgMod[kKilled]) break;
+          if(slc.tjs[it1].AlgMod[kKilled]) break;
         } // end1
       } // it1
     } // iterate

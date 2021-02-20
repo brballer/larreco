@@ -63,6 +63,7 @@ namespace cluster {
     void endJob() override;
     std::string PrintHit(const recob::Hit& hit);
     int PDGCodeIndex(simb::MCParticle const& mcp);
+    int PDGCodeIndex(recob::PFParticle const& pfp);
     void FindFirstLastWire(art::Handle<std::vector<recob::Hit>> const& allHits, 
                            std::vector<unsigned int> const& hitMCPIndex,
                            MatchStruct const& match,
@@ -85,6 +86,8 @@ namespace cluster {
     std::array<float, 5> fSum {{0}};
     unsigned int fNBadEP {0};
     unsigned int fEventsProcessed {0};
+    std::array<std::array<float, 5>, 5> fPIDTrueReco {{0}};
+    bool fPIDExists {false};
 
   }; // class ClusterAna
 
@@ -112,8 +115,6 @@ namespace cluster {
   ClusterAna::beginJob()
   {
 
-    // get access to the TFile service
-    art::ServiceHandle<art::TFileService const> tfs;
   }
 
   //------------------------------------------------------------------
@@ -142,6 +143,23 @@ namespace cluster {
       myprt << " AveEP: " << totEPSum;
       myprt << " nBad/nMCPInPln " << fNBadEP << "/" << (int)totSum;
     }
+    if (fPIDExists) {
+      myprt << "\n PID matrix: Truth in rows, Reco in columns\n";
+      myprt << "           failed    muon    pion    kaon  proton\n";
+      for (unsigned short truCode = 0; truCode < 5; ++truCode) {
+        myprt  << std::setw(9) << std::left << fNames[truCode] << std::right;
+        float cnt = 0;
+        for (unsigned short recCode = 0; recCode < 5; ++recCode) {
+          cnt += fPIDTrueReco[truCode][recCode];
+          myprt << std::setw(8) << (int)fPIDTrueReco[truCode][recCode];
+        } // recCode
+        if (cnt > 0) {
+          float frac = fPIDTrueReco[truCode][truCode] / cnt;
+          myprt << " Reco/True fraction " <<std::setprecision(2) << frac;
+        }
+        myprt << "\n";
+      } // truCode
+    } // fPIDExists
   } // endJob
 
   //------------------------------------------------------------------
@@ -160,8 +178,10 @@ namespace cluster {
     // limit the number of print output lines
     unsigned short nPrtMCP = 0;
     unsigned short nPrtSel = 0;
-    // temporary list of MCParticle to be used
-    std::vector<unsigned int> mcpiList;
+    // temporary list of the MCParticle index to be used and the matching
+    // PFParticle index
+    //
+    std::vector<std::pair<unsigned int, unsigned int>> mcpiPFPiList;
     for(unsigned int mcpi = 0; mcpi < (*mcps).size(); ++mcpi) {
       auto& mcp = (*mcps)[mcpi];
       int tid = mcp.TrackId();
@@ -184,9 +204,9 @@ namespace cluster {
           myprt << "--> truncated print of " << (*mcps).size() << " MCParticles";
         }
       } // fPrintLevel > 2
-      mcpiList.push_back(mcpi);
+      mcpiPFPiList.push_back(std::make_pair(mcpi, UINT_MAX));
     } // mcpi
-    if (mcpiList.empty()) return;
+    if (mcpiPFPiList.empty()) return;
 
     // get clusters and cluster-hit associations
     auto allCls = evt.getValidHandle<std::vector<recob::Cluster>>(fClusterModuleLabel);
@@ -225,16 +245,9 @@ namespace cluster {
       for(auto& tide : tides) {
         int tid = tide.trackID;
         if (tide.energyFrac > 0.5) {
-          for(auto mcpi : mcpiList) {
-            if((*mcps)[mcpi].TrackId() != tid) continue;
-            hitMCPIndex[iht] = mcpi;
-/* temp dump low dE/dx hits to a CSV file to check dE/dx uncertainties
-            if (tide.energyFrac > 0.95 && tide.energy < 2) {
-              std::cout<<"tide, "<<(*mcps)[mcpi].PdgCode();
-              std::cout<<", "<<std::setprecision(5)<<tide.energy<<", "<<tide.energyFrac;
-              std::cout<<", "<<hit.Integral()<<"\n";
-            }
-*/
+          for(auto mpPair : mcpiPFPiList) {
+            if((*mcps)[mpPair.first].TrackId() != tid) continue;
+            hitMCPIndex[iht] = mpPair.first;
             ++nMatched;
             break;
           }
@@ -338,42 +351,71 @@ namespace cluster {
         } // match
       } // icl
     } // tpc
-    // now decide which PFParticle matches to each MCParticle in mcpiList
-    std::vector<unsigned int> mcpToPFP(mcpiList.size(), UINT_MAX);
+    // now decide which PFParticle matches to each MCParticle in mcpiPFPiList
     if (fmpfp.isValid()) {
       for (auto& match : matches) {
-        if (match.mcpi == UINT_MAX) continue;
+        if (match.mcpi >= (*mcps).size()) continue;
         unsigned int pfpi = UINT_MAX;
         unsigned short cnt = 0;
         for(unsigned int plane = 0; plane < geom->Nplanes(); ++plane) {
           if (match.firstHit[plane] >= (*allHits).size()) continue;
           if (match.mcpTruHitCount[plane] < 3) continue;
+          if (match.clsIndex[plane] >= (*allCls).size()) continue;
           auto& pfps = fmpfp.at(match.clsIndex[plane]);
           if (pfps.empty()) continue;
           if (pfpi == UINT_MAX) pfpi = pfps[0].key();
           if (pfpi == pfps[0].key()) ++cnt;
         } // plane
-        if (cnt > 1) mcpToPFP[match.mcpi] = pfpi;
+        if (cnt > 1) {
+          // find match.mcpi in mcpiPFPiList
+          // TODO: This doesn't properly account for PFParticles
+          // that span several TPCs
+          for (auto& mpPair : mcpiPFPiList) {
+            if (mpPair.first != match.mcpi) continue;
+            mpPair.second = pfpi;
+            break;
+          } // mpPair
+        } // cnt > 1
       } // match
     } // isValid
+
+    // fill the PID True/Reco matrix
+    for (unsigned short ii = 0; ii < mcpiPFPiList.size(); ++ii) {
+      unsigned int mcpi = mcpiPFPiList[ii].first;
+      unsigned int pfpi = mcpiPFPiList[ii].second;
+      if (mcpi >= (*mcps).size()) continue;
+      int truCode = PDGCodeIndex((*mcps)[mcpi]);
+      if (truCode < 0 || truCode > 4) continue;
+      int recCode = 0;
+      if (pfpi < (*allPFP).size()) recCode = PDGCodeIndex((*allPFP)[pfpi]);
+      if (recCode < 0 || recCode > 4) continue;
+      ++fPIDTrueReco[truCode][recCode];
+      fPIDExists = true;
+    } // ii
 
     if (fPrintLevel > 1) {
       mf::LogVerbatim myprt("ClusterAna");
       if(nPrtSel < 500) {
         ++nPrtSel;
         for(auto& match : matches) {
-          if (match.mcpi == UINT_MAX) continue;
+          if (match.mcpi >= (*mcps).size()) continue;
           auto& mcp = (*mcps)[match.mcpi];
-          myprt << "TrackId " << mcp.TrackId();
+          myprt <<" mcpi " << match.mcpi;
+          myprt << ", TrackId " << mcp.TrackId();
           myprt << ", PDG code " << mcp.PdgCode();
           int TMeV = 1000 * (mcp.E() - mcp.Mass());
           myprt << ", T " << TMeV << " MeV";
           myprt << ", Process " << mcp.Process();
           myprt << ", in TPC " << match.tpc;
-          if (mcpToPFP[match.mcpi] != UINT_MAX && allPFP.isValid()) {
-            myprt << " -> pfp.Self " << mcpToPFP[match.mcpi];
-            auto& pfp = (*allPFP)[mcpToPFP[match.mcpi]];
-            myprt << " PDGCode " << pfp.PdgCode();
+          unsigned short indx = 0;
+          for (indx = 0; indx < mcpiPFPiList.size(); ++indx) if (mcpiPFPiList[indx].first == match.mcpi) break;
+          if (indx < mcpiPFPiList.size()) {
+            unsigned int pfpi = mcpiPFPiList[indx].second;
+            if (pfpi < (*allPFP).size()) {
+              auto& pfp = (*allPFP)[mcpiPFPiList[indx].second];
+              myprt << " -> pfp.Self " << pfp.Self();
+              myprt << " PDGCode " << pfp.PdgCode();
+            }
           }
           myprt << "\n";
           for(unsigned int plane = 0; plane < geom->Nplanes(); ++plane) {
@@ -514,6 +556,36 @@ namespace cluster {
       default: return -1;
     }
   } // PDGCodeIndex
+
+  int
+  ClusterAna::PDGCodeIndex(recob::PFParticle const& pfp)
+  {
+    // return a code similar to that used for MCParticles. A
+    // PDGCodeIndex = 0 in the function above is for true
+    // electrons. The reconstructed PID for electrons is currently
+    // not done, so PDGCodeIndex = 0 indicates that the
+    // calorimetric PID failed because there is no Bragg
+    // in the PFParticle or it wasn't detected
+    switch(abs(pfp.PdgCode())) {
+      case 0:
+        // PID failed
+        return 0;
+      case 13:
+        // muon
+        return 1;
+      case 211:
+        // pion
+        return 2;
+      case 321:
+        // kaon
+        return 3;
+      case 2212:
+        // proton
+        return 4;
+      default: return -1;
+    }
+  } // PDGCodeIndex
+
 
   //------------------------------------------------------------------
   std::string

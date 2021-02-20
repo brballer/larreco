@@ -189,11 +189,13 @@ namespace tca {
     unsigned short nPtsFit;
   };
 
+  constexpr unsigned int BitSetSize = 64;
+
   // Global information for the trajectory
   struct Trajectory {
     std::vector<TrajPoint> Pts; ///< Trajectory points
     CTP_t CTP{0};               ///< Cryostat, TPC, Plane code
-    std::bitset<128> AlgMod;    ///< Bit set if algorithm AlgBit_t modifed the trajectory
+    std::bitset<BitSetSize> AlgMod;    ///< Bit set if algorithm AlgBit_t modifed the trajectory
     int WorkID{0};
     int ParentID{0}; ///< ID of the Tj this one was derived from (NOT A PARENT-DAUGHTER RELATIONSHIP)
     float AveChg{0};       ///< Calculated using ALL hits
@@ -273,9 +275,6 @@ namespace tca {
     float Count{0}; // Set to 0 if matching failed
   };
 
-  // Allocate the first set of bits in AlgBit_t for 3D algs
-  constexpr unsigned int pAlgModSize = 8;
-
   struct PFPStruct {
     std::vector<int> TjIDs;  // used to reference Tjs within a slice
     std::vector<int> TjUIDs; // used to reference Tjs in any slice
@@ -297,7 +296,7 @@ namespace tca {
     unsigned short MVI;                      // matVec index for detailed debugging
     std::bitset<8> Flags;                    //< see PFPFlags_t
     std::array<std::bitset<8>, 2> EndFlag{}; // Uses the same enum as Trajectory EndFlag
-    std::bitset<pAlgModSize> AlgMod; //< Allocate the first set of bits in AlgBit_t for 3D algs
+    std::bitset<BitSetSize> AlgMod; //< Allocate the first set of bits in AlgBit_t for 3D algs
   };
 
   typedef enum {
@@ -460,8 +459,8 @@ namespace tca {
     float projectionErrFactor;
     float VLAStepSize;
     float JTMaxHitSep2;      /// Max hit separation for making junk trajectories. < 0 to turn off
-    std::bitset<128> useAlg; ///< Allow user to mask off specific algorithms
-    std::bitset<128> dbgAlg; ///< Allow user to turn on debug printing in algorithms (that print...)
+    std::bitset<BitSetSize> useAlg; ///< Allow user to mask off specific algorithms
+    std::bitset<BitSetSize> dbgAlg; ///< Allow user to turn on debug printing in algorithms (that print...)
     short recoSlice{0};      ///< only reconstruct the slice with ID (0 = all)
     short recoTPC{-1};       ///< only reconstruct in the seleted TPC
     bool dbgSlc{true};       ///< debug only in the user-defined slice? default is all slices

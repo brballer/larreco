@@ -61,8 +61,10 @@ namespace tca {
     bool useMaxChiCut = (tj.PDGCode == 13 || !tj.Strategy[kSlowing]);
 
     // Get the first forecast when there are 6 points with charge
-    tjfs.resize(1);
-    tjfs[0].nextForecastUpdate = 6;
+    tjfs.clear();
+    TjForecast tjf;
+    tjf.nextForecastUpdate = 6;
+    tjfs.push_back(tjf);
 
     for(unsigned short step = 1; step < 10000; ++step) {
       unsigned short npwc = NumPtsWithCharge(slc, tj, false);
@@ -1034,6 +1036,7 @@ namespace tca {
     unsigned int ipl = planeID.Plane;
     if(wire > slc.lastWire[ipl]) return;
     // Assume a signal exists on a dead wire
+    if (wire >= evt.goodWire[ipl].size()) return;
     if(!evt.goodWire[ipl][wire]) sigOK = true;
     if(slc.wireHitRange[ipl][wire].first == UINT_MAX) return;
     unsigned int firstHit = slc.wireHitRange[ipl][wire].first;

@@ -2221,7 +2221,11 @@ namespace tca {
     float maxTick = timeWindow[1] / tcc.unitsPerTick;
     for (int wire = loWire; wire <= hiWire; ++wire) {
       // Set hitsNear if the wire is dead
-      if (!evt.goodWire[plane][wire]) hitsNear = true;
+      if (wire < (int)evt.goodWire[plane].size()) {
+        if (!evt.goodWire[plane][wire]) hitsNear = true;
+      } else {
+        std::cout<<"FindCloseHits bad goodWire "<<plane<<" wire "<<wire<<" size "<<evt.goodWire[plane].size()<<"\n";
+      }
       if (slc.wireHitRange[plane][wire].first == UINT_MAX) continue;
       unsigned int firstHit = slc.wireHitRange[plane][wire].first;
       unsigned int lastHit = slc.wireHitRange[plane][wire].second;
@@ -3811,14 +3815,19 @@ namespace tca {
       } // cnt too low
     }   // plane
 
-    if (tcc.modes[kModeDebug]) {
-      std::cout << "Analyze hits aveHitRMS";
-      std::cout << std::fixed << std::setprecision(1);
-      for (auto rms : evt.aveHitRMS)
-        std::cout << " " << rms;
-      std::cout << " aveHitRMSValid? " << evt.aveHitRMSValid << "\n";
+    if (evt.aveHitRMSValid) {
+      mf::LogWarning mywarn("TC");
+      mywarn << "The average single hit width in each plane was not defined in the job configuration.\n";
+      mywarn << "Hits on event " << evt.event << " were analyzed to estimate these variables.\n";
+      mywarn << "Recommend adding the following line to the job fcl file:\n";
+      mywarn << "physics.producers.<module name>.TrajClusterAlg.AveHitRMS: [";
+      mywarn << std::fixed << std::setprecision(1);
+      for (unsigned short plane = 0; plane < nplanes; ++plane) {
+        mywarn << " " << evt.aveHitRMS[plane];
+        if (plane < nplanes - 1) mywarn <<",";
+      } // plane
+      mywarn << " ]\n";
     }
-
     return true;
   } // Analyze hits
 
@@ -3902,7 +3911,7 @@ namespace tca {
       evt.wireHitRange[pln][wire].second = iht;
     } // iht
     if (nBadWireFix > 0 && tcc.modes[kModeDebug]) {
-      std::cout << "FillWireHitRange found hits on " << nBadWireFix
+      mf::LogWarning("TC")<< "FillWireHitRange found hits on " << nBadWireFix
                 << " wires that were declared not-good by the ChannelStatus service. Fixed it...\n";
     }
   } // FillWireHitRange

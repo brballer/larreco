@@ -4,7 +4,7 @@
 #include "kalmanfilterfittrackmakertool.fcl"
 BEGIN_PROLOG
 
-standard_trajclusteralg:
+standard_tctrackeralg:      # previously standard_trajclusteralg
 {
 #   NeutrinoMode: true       # Create neutrino PFParticles & hierarchy?
    NPtsAve: 10              # Number of points to find average charge, Ave chg rms
@@ -67,7 +67,7 @@ standard_trajclusteralg:
    SkipAlgs: [ ]   # List of algs that should not be used
    DebugConfig: []
 }
-standard_trajclusteralg.CaloAlg: @local::standard_calorimetryalgmc
+standard_tctrackeralg.CaloAlg: @local::standard_calorimetryalgmc
 
 standard_clustercrawleralg:
 {
@@ -401,12 +401,12 @@ microboone_clusterparamsalg:                  @local::standard_clusterparamsalg
 microboone_smallclustalg:	              @local::standard_smallclustalg
 microboone_clustercrawleralg:                 @local::standard_clustercrawleralg
 
-microboone_trajclusteralg:                    @local::standard_trajclusteralg
-microboone_trajclusteralg.MultHitSep: 3.2
-microboone_trajclusteralg.MaxWireSkipNoSignal: 2
-microboone_trajclusteralg.MuonTag: [40, 500, 10, 3]
-microboone_trajclusteralg.VLAStepSize: 1
-microboone_trajclusteralg.Vertex2DCuts: [ 6, 8, 45, 3, 3, 50, 0.6, 50, 0.8, 0.8]
+microboone_tctrackeralg:                    @local::standard_tctrackeralg
+microboone_tctrackeralg.MultHitSep: 3.2
+microboone_tctrackeralg.MaxWireSkipNoSignal: 2
+microboone_tctrackeralg.MuonTag: [40, 500, 10, 3]
+microboone_tctrackeralg.VLAStepSize: 1
+microboone_tctrackeralg.Vertex2DCuts: [ 6, 8, 45, 3, 3, 50, 0.6, 50, 0.8, 0.8]
 
 microboone_clustermatchalg:                   @local::standard_clustermatchalg
 microboone_clustermergealg:                   @local::standard_clustermergealg

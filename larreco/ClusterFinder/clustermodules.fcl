@@ -4,10 +4,10 @@
 
 BEGIN_PROLOG
 
-standard_trajcluster:
+standard_tctracker:   # previously standard_trajcluster - now produces tracks
 {
-  module_type:          "TrajCluster"
-  TrajClusterAlg:       @local::standard_trajclusteralg
+  module_type:          "TCTracker"
+  TCTrackerAlg:       @local::standard_tctrackeralg
   # don't recosntruct a slice if it has more than MaxSliceHits
   MaxSliceHits:     50000
   DoWireAssns: true
@@ -18,7 +18,7 @@ standard_trajcluster:
   SpacePointHitAssnLabel:    "hitpdune"
   MakeTracks: true
   MakeTrackSpacePoints: true
-} # standard_trajcluster
+} # standard_tctracker
 
 standard_blurredcluster:
 {

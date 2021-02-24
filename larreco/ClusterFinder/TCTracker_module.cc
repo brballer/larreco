@@ -1,5 +1,5 @@
 /**
- * @file   TrajCluster_module.cc
+ * @file   TCTracker_module.cc
  * @brief  Cluster finder using trajectories
  * @author Bruce Baller (baller@fnal.gov)
  *
@@ -24,7 +24,7 @@
 #include "lardataobj/RecoBase/PFParticle.h"
 #include "lardataobj/RecoBase/Slice.h"
 #include "lardataobj/RecoBase/SpacePoint.h"
-#include "larreco/RecoAlg/TrajClusterAlg.h"
+#include "larreco/RecoAlg/TCTrackerAlg.h"
 #include "lardataobj/RecoBase/Track.h"
 #include "lardataobj/RecoBase/TrackHitMeta.h"
 #include "larreco/RecoAlg/TCAlg/DataStructs.h"
@@ -33,27 +33,27 @@
 
 namespace cluster {
   /**
-   * @brief Produces clusters by the TrajCluster algorithm
+   * @brief Produces clusters by the TCTracker algorithm
    *
    * Configuration parameters
    * -------------------------
    *
    * - *HitFinderModuleLabel* (InputTag, mandatory): label of the hits to be
    *   used as input (usually the label of the producing module is enough)
-   * - *TrajClusterAlg* (parameter set, mandatory): full configuration for
-   *   TrajClusterAlg algorithm
+   * - *TCTrackerAlg* (parameter set, mandatory): full configuration for
+   *   TCTrackerAlg algorithm
    *
    */
-  class TrajCluster : public art::EDProducer {
+  class TCTracker : public art::EDProducer {
   public:
-    explicit TrajCluster(fhicl::ParameterSet const& pset);
+    explicit TCTracker(fhicl::ParameterSet const& pset);
 
   private:
     void produce(art::Event& evt) override;
     void beginJob() override;
     void endJob() override;
 
-    tca::TrajClusterAlg fTCAlg; // define TrajClusterAlg object
+    tca::TCTrackerAlg fTCAlg; // define TCTrackerAlg object
     void GetHits(const std::vector<recob::Hit>& inputHits,
                  const geo::TPCID& tpcid,
                  std::vector<std::vector<unsigned int>>& tpcHits);
@@ -78,7 +78,7 @@ namespace cluster {
     unsigned int fEventsProcessed;
     unsigned int fNumTracks;
     unsigned int fNumClusters;
-  }; // class TrajCluster
+  }; // class TCTracker
 
 } // namespace cluster
 
@@ -128,8 +128,8 @@ namespace cluster {
   } // SortHits
 
   //----------------------------------------------------------------------------
-  TrajCluster::TrajCluster(fhicl::ParameterSet const& pset)
-    : EDProducer{pset}, fTCAlg{pset.get<fhicl::ParameterSet>("TrajClusterAlg")}
+  TCTracker::TCTracker(fhicl::ParameterSet const& pset)
+    : EDProducer{pset}, fTCAlg{pset.get<fhicl::ParameterSet>("TCTrackerAlg")}
   {
     fHitModuleLabel = "NA";
     if (pset.has_key("HitModuleLabel")) fHitModuleLabel = pset.get<art::InputTag>("HitModuleLabel");
@@ -189,11 +189,11 @@ namespace cluster {
     produces< art::Assns<recob::Slice, recob::Cluster> >();
     produces< art::Assns<recob::Slice, recob::PFParticle> >();
     produces< art::Assns<recob::Slice, recob::Hit> >();
-  } // TrajCluster::TrajCluster()
+  } // TCTracker::TCTracker()
 
   //----------------------------------------------------------------------------
   void
-  TrajCluster::beginJob()
+  TCTracker::beginJob()
   {
     fEventsProcessed = 0;
     fNumClusters = 0;
@@ -202,7 +202,7 @@ namespace cluster {
 
   //----------------------------------------------------------------------------
   void
-  TrajCluster::endJob()
+  TCTracker::endJob()
   {
     // Print out end of job statistics
     if(!tca::tcc.modes[tca::kModeDebug]) return;
@@ -226,11 +226,11 @@ namespace cluster {
 
   //----------------------------------------------------------------------------
   void
-  TrajCluster::produce(art::Event& evt)
+  TCTracker::produce(art::Event& evt)
   {
     // Get a single hit collection from a HitsModuleLabel or multiple sets of "sliced" hits
     // (aka clusters of hits that are close to each other in 3D) from a SliceModuleLabel.
-    // A pointer to the full hit collection is passed to TrajClusterAlg. The hits that are
+    // A pointer to the full hit collection is passed to TCTrackerAlg. The hits that are
     // in each slice are reconstructed to find 2D trajectories (that become clusters),
     // 2D vertices (EndPoint2D), 3D vertices, PFParticles and Tracks. These data products
     // are then collected and written to the event. Each slice is considered as an independent
@@ -245,14 +245,14 @@ namespace cluster {
     // get a reference to the Hit collection
     auto inputHits = art::Handle<std::vector<recob::Hit>>();
     if (!evt.getByLabel(fHitModuleLabel, inputHits))
-      throw cet::exception("TrajClusterModule")
+      throw cet::exception("TCTrackerModule")
         << "Failed to get a handle to hit collection '" << fHitModuleLabel.label() << "'\n";
     nInputHits = (*inputHits).size();
     if (!fTCAlg.SetInputHits(*inputHits, evt.run(), evt.event()))
-      throw cet::exception("TrajClusterModule")
+      throw cet::exception("TCTrackerModule")
         << "Failed to process hits from '" << fHitModuleLabel.label() << "'\n";
     // Try to determine the source of the hit collection using the assumption that it was
-    // derived from gaushit. If this is successful, pass the handle to TrajClusterAlg to
+    // derived from gaushit. If this is successful, pass the handle to TCTrackerAlg to
     // recover hits that were incorrectly removed by disambiguation (DUNE)
     if (fHitModuleLabel != "gaushit") {
       auto sourceHits = art::Handle<std::vector<recob::Hit>>();
@@ -265,26 +265,26 @@ namespace cluster {
     if (fSliceModuleLabel != "NA") {
       fTCAlg.ExpectSlicedHits();
       if (!evt.getByLabel(fSliceModuleLabel, inputSlices))
-        throw cet::exception("TrajClusterModule") << "Failed to get inputSlices";
+        throw cet::exception("TCTrackerModule") << "Failed to get inputSlices";
     } // fSliceModuleLabel specified
 
     // get an optional reference to the SpacePoint collection
     auto InputSpts = art::Handle<std::vector<recob::SpacePoint>>();
     if (fSpacePointModuleLabel != "NA") {
       if (!evt.getByLabel(fSpacePointModuleLabel, InputSpts))
-        throw cet::exception("TrajClusterModule") << "Failed to get a handle to SpacePoints\n";
+        throw cet::exception("TCTrackerModule") << "Failed to get a handle to SpacePoints\n";
       tca::evt.sptHits.resize((*InputSpts).size(), {{UINT_MAX, UINT_MAX, UINT_MAX}});
       art::FindManyP<recob::Hit> hitsFromSpt(InputSpts, evt, fSpacePointHitAssnLabel);
-      // TrajClusterAlg doesn't use the SpacePoint positions (only the assns to hits) but pass it
+      // TCTrackerAlg doesn't use the SpacePoint positions (only the assns to hits) but pass it
       // anyway in case it is useful
       fTCAlg.SetInputSpts(*InputSpts);
       if (!hitsFromSpt.isValid())
-        throw cet::exception("TrajClusterModule")
+        throw cet::exception("TCTrackerModule")
           << "Failed to get a handle to SpacePoint -> Hit assns\n";
       // ensure that the assn is to the inputHit collection
       auto& firstHit = hitsFromSpt.at(0)[0];
       if (firstHit.id() != inputHits.id())
-        throw cet::exception("TrajClusterModule")
+        throw cet::exception("TCTrackerModule")
           << "The SpacePoint -> Hit assn doesn't reference the input hit collection\n";
       tca::evt.sptHits.resize((*InputSpts).size(), {{UINT_MAX, UINT_MAX, UINT_MAX}});
       for (unsigned int isp = 0; isp < (*InputSpts).size(); ++isp) {
@@ -364,7 +364,7 @@ namespace cluster {
           // clear the temp vector
           tmp.resize(0);
           sortVec.resize(0);
-          fTCAlg.RunTrajClusterAlg(clockData, detProp, tpcHits, slcIDs[isl]);
+          fTCAlg.RunTCTrackerAlg(clockData, detProp, tpcHits, slcIDs[isl]);
         } // isl
       }   // TPC
       // stitch PFParticles between TPCs, create PFP start vertices, etc
@@ -558,7 +558,7 @@ namespace cluster {
                               nclhits, // n hits
                               0,       // wires over hits
                               0,       // width (0 for line-like clusters)
-                              clsID,   // ID from TrajClusterAlg
+                              clsID,   // ID from TCTrackerAlg
                               view,    // view
                               tca::DecodeCTP(tj.CTP), // planeID
                               recob::Cluster::Sentry  // sentry
@@ -780,7 +780,7 @@ namespace cluster {
       // www: using sp from hit
       for (unsigned int allHitsIndex = 0; allHitsIndex < nInputHits; ++allHitsIndex) {
         if (newIndex[allHitsIndex] == UINT_MAX)
-          continue; // skip hits not used in slice (not TrajCluster hits)
+          continue; // skip hits not used in slice (not TCTracker hits)
         auto& sp_from_hit = spFromHit.at(allHitsIndex);
         for (auto& sp : sp_from_hit) {
           // SpacePoint -> Hit assn
@@ -839,11 +839,11 @@ namespace cluster {
     evt.put(std::move(slc_cls_assn));
     evt.put(std::move(slc_pfp_assn));
     evt.put(std::move(slc_hit_assn));
-  } // TrajCluster::produce()
+  } // TCTracker::produce()
 
   ////////////////////////////////////////////////
   void
-  TrajCluster::GetHits(const std::vector<recob::Hit>& inputHits,
+  TCTracker::GetHits(const std::vector<recob::Hit>& inputHits,
                        const geo::TPCID& tpcid,
                        std::vector<std::vector<unsigned int>>& tpcHits)
   {
@@ -859,7 +859,7 @@ namespace cluster {
 
   ////////////////////////////////////////////////
   void
-  TrajCluster::GetHits(const std::vector<recob::Hit>& inputHits,
+  TCTracker::GetHits(const std::vector<recob::Hit>& inputHits,
                        const geo::TPCID& tpcid,
                        const std::vector<recob::Slice>& inputSlices,
                        art::FindManyP<recob::Hit>& hitFromSlc,
@@ -893,6 +893,6 @@ namespace cluster {
    } // GetHits
 
   //----------------------------------------------------------------------------
-  DEFINE_ART_MODULE(TrajCluster)
+  DEFINE_ART_MODULE(TCTracker)
 
 } // namespace cluster

@@ -11,6 +11,7 @@ standard_tctrackeralg:      # previously standard_trajclusteralg
    MinPtsFit: [4, 3, 3]     # Min number of points in the trajectory fit required on each pass
    MinPts:    [4, 3, 3]     # Min number of points in the trajectory required on each pass
    MaxAngleCode: [0, 1, 2]  # Max angle range code allowed on each pass
+   AveHitRMS: [6., 6., 6., 1]  # default values for a 3 plane TPC. 4th elementflags using default
    MaxChi: 20               # Max Chi/DOF for accepting a trajectory fit (long muons)
    HitErrFac: 0.4          # hit time error for fitting = fHitErrFac * (hit RMS)
    MinAmp:  1               # Min amplitude for a wire signal being considered present (must be > 0)

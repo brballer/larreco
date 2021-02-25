@@ -1,13 +1,13 @@
 ////////////////////////////////////////////////////////////////////////
 //
 //
-// TrajClusterAlg
+// TCTrackerAlg, formerly TCTrackerAlg
 //
 // Bruce Baller
 //
 ///////////////////////////////////////////////////////////////////////
-#ifndef TRAJCLUSTERALG_H
-#define TRAJCLUSTERALG_H
+#ifndef TCTRACKERALG_H
+#define TCTRACKERALG_H
 
 // C/C++ standard libraries
 #include <string>
@@ -34,14 +34,14 @@ class TTree;
 
 namespace tca {
 
-  class TrajClusterAlg {
+  class TCTrackerAlg {
     public:
 
 
     /// @{
     /// @name Data structures for the reconstruction results
 
-    explicit TrajClusterAlg(fhicl::ParameterSet const& pset);
+    explicit TCTrackerAlg(fhicl::ParameterSet const& pset);
 
     void reconfigure(fhicl::ParameterSet const& pset);
 
@@ -50,7 +50,7 @@ namespace tca {
     void SetInputSpts(std::vector<recob::SpacePoint> const& sptHandle) { evt.sptHandle = &sptHandle; }
     void SetSourceHits(std::vector<recob::Hit> const& srcHits);
     void ExpectSlicedHits() { evt.expectSlicedHits = true; }
-    void RunTrajClusterAlg(detinfo::DetectorClocksData const& clockData,
+    void RunTCTrackerAlg(detinfo::DetectorClocksData const& clockData,
                            detinfo::DetectorPropertiesData const& detProp,
                            std::vector<unsigned int>& hitsInSlice, int sliceID);
     bool CreateSlice(detinfo::DetectorClocksData const& clockData,
@@ -119,8 +119,8 @@ namespace tca {
     void FindJunkTraj(TCSlice& slc, CTP_t inCTP);
     std::vector<unsigned int> FindJTHits(const TCSlice& slc, unsigned int iht);
 
-  }; // class TrajClusterAlg
+  }; // class TCTrackerAlg
 
 } // namespace cluster
 
-#endif // ifndef TRAJCLUSTERALG_H
+#endif // ifndef TCTRACKERALG_H

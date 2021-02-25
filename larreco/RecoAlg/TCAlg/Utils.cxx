@@ -3781,53 +3781,25 @@ namespace tca {
 
     unsigned short cstat = (*evt.allHits)[0].WireID().Cryostat;
     unsigned short tpc = (*evt.allHits)[0].WireID().TPC;
-
     unsigned short nplanes = tcc.geom->Nplanes(tpc, cstat);
-    evt.aveHitRMS.resize(nplanes);
-    std::vector<float> cnt(nplanes, 0);
-    for (unsigned short iht = 0; iht < (*evt.allHits).size(); ++iht) {
-      auto& hit = (*evt.allHits)[iht];
-      unsigned short plane = hit.WireID().Plane;
-      if (plane > nplanes - 1) return false;
-      if (cnt[plane] > 200) continue;
-      // require multiplicity one
-      if (hit.Multiplicity() != 1) continue;
-      // not-crazy Chisq/DOF
-      if (hit.GoodnessOfFit() < 0 || hit.GoodnessOfFit() > 500) continue;
-      // don't let a lot of runt hits screw up the calculation
-      if (hit.PeakAmplitude() < 1) continue;
-      evt.aveHitRMS[plane] += hit.RMS();
-      ++cnt[plane];
-      // quit if enough hits are found
-      bool allDone = true;
-      for (unsigned short plane = 0; plane < nplanes; ++plane)
-        if (cnt[plane] < 200) allDone = false;
-      if (allDone) break;
-    } // iht
-
-    // assume there are enough hits in each plane
-    evt.aveHitRMSValid = true;
-    for (unsigned short plane = 0; plane < nplanes; ++plane) {
-      if (cnt[plane] > 4) { evt.aveHitRMS[plane] /= cnt[plane]; }
-      else {
-        evt.aveHitRMS[plane] = 10;
-        evt.aveHitRMSValid = false;
-      } // cnt too low
-    }   // plane
-
-    if (evt.aveHitRMSValid) {
+    bool usingDefault = (evt.aveHitRMS.size() != nplanes);
+    if (usingDefault) {
       mf::LogWarning mywarn("TC");
-      mywarn << "The average single hit width in each plane was not defined in the job configuration.\n";
-      mywarn << "Hits on event " << evt.event << " were analyzed to estimate these variables.\n";
-      mywarn << "Recommend adding the following line to the job fcl file:\n";
-      mywarn << "physics.producers.<module name>.TrajClusterAlg.AveHitRMS: [";
-      mywarn << std::fixed << std::setprecision(1);
-      for (unsigned short plane = 0; plane < nplanes; ++plane) {
-        mywarn << " " << evt.aveHitRMS[plane];
-        if (plane < nplanes - 1) mywarn <<",";
-      } // plane
-      mywarn << " ]\n";
-    }
+      mywarn << "The vector of average RMS() of hits in each plane wasn't defined in the fcl job file.\n";
+      mywarn << "Better performance will result if these values are optimized for the hit collection.\n";
+      mywarn << "Setting it to the default value of 6 ticks. You can disable this warning by\n";
+      mywarn << "setting the fcl configuration something like this\n";
+      mywarn << "physics.producers.<module name>.TCTrackerAlg.AveHitRMS: ";
+      mywarn << "[ rms_Induction1, rms_Induction2, rms_Collection ]\n";
+    } // usingDefault
+    evt.aveHitRMS.resize(nplanes, 6.);
+    evt.aveHitRMSValid = true;
+    mf::LogVerbatim myprt("TC");
+    myprt << "TCTracker: using AveHitRMS: [";
+    myprt << std::fixed << std::setprecision(2);
+    for (auto ahr : evt.aveHitRMS) myprt << " "<<ahr; 
+    myprt << " ] ticks";
+    if (usingDefault) myprt << " --> These are default values";
     return true;
   } // Analyze hits
 

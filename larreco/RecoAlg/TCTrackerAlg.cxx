@@ -1,6 +1,6 @@
 //////////////////////////////////////////////////////////////////////
 ///
-/// TrajClusterAlg
+/// TCTrackerAlg
 ///
 /// Bruce Baller, baller@fnal.gov
 /// Citation: Liquid argon TPC signal formation, signal processing and reconstruction techniques
@@ -9,7 +9,7 @@
 ///
 ////////////////////////////////////////////////////////////////////////
 
-#include "larreco/RecoAlg/TrajClusterAlg.h"
+#include "larreco/RecoAlg/TCTrackerAlg.h"
 #include "lardata/DetectorInfoServices/DetectorClocksService.h"
 #include "lardata/DetectorInfoServices/DetectorPropertiesService.h"
 #include "larreco/RecoAlg/TCAlg/DebugStruct.h"
@@ -27,7 +27,7 @@ namespace tca {
 
   //------------------------------------------------------------------------------
 
-  TrajClusterAlg::TrajClusterAlg(fhicl::ParameterSet const& pset)
+  TCTrackerAlg::TCTrackerAlg(fhicl::ParameterSet const& pset)
     : fCaloAlg(pset.get<fhicl::ParameterSet>("CaloAlg"))
   {
 
@@ -44,13 +44,7 @@ namespace tca {
 
     tcc.hitErrFac = pset.get<float>("HitErrFac", 0.4);
     // Allow the user to specify the typical hit rms for small-angle tracks
-    std::vector<float> aveHitRMS;
-    if (pset.has_key("AveHitRMS")) aveHitRMS = pset.get<std::vector<float>>("AveHitRMS");
-    // Turn off the call to AnalyzeHits
-    if (!aveHitRMS.empty()) {
-      evt.aveHitRMSValid = true;
-      evt.aveHitRMS = aveHitRMS;
-    }
+    evt.aveHitRMS = pset.get<std::vector<float>>("AveHitRMS", {6., 6., 6., 1.});
     tcc.angleRanges = pset.get<std::vector<float>>("AngleRanges");
     tcc.nPtsAve = pset.get<short>("NPtsAve", 20);
     tcc.minPtsFit = pset.get<std::vector<unsigned short>>("MinPtsFit");
@@ -263,7 +257,7 @@ namespace tca {
 
   ////////////////////////////////////////////////
   void
-  TrajClusterAlg::GetdEdxTemplates(std::string const& fileName)
+  TCTrackerAlg::GetdEdxTemplates(std::string const& fileName)
   {
     // transfer the contents of the dE/dx vs ResidualRange root file into
     // local vectors for muons, pions, kaons and protons
@@ -306,7 +300,7 @@ namespace tca {
 
   ////////////////////////////////////////////////
   bool
-  TrajClusterAlg::SetInputHits(std::vector<recob::Hit> const& inputHits,
+  TCTrackerAlg::SetInputHits(std::vector<recob::Hit> const& inputHits,
                                unsigned int run,
                                unsigned int event)
   {
@@ -334,7 +328,7 @@ namespace tca {
 
   ////////////////////////////////////////////////
   void
-  TrajClusterAlg::SetSourceHits(std::vector<recob::Hit> const& srcHits)
+  TCTrackerAlg::SetSourceHits(std::vector<recob::Hit> const& srcHits)
   {
     evt.srcHits = &srcHits;
     evt.tpcSrcHitRange.resize(tcc.geom->NTPC());
@@ -351,7 +345,7 @@ namespace tca {
 
   ////////////////////////////////////////////////
   void
-  TrajClusterAlg::RunTrajClusterAlg(detinfo::DetectorClocksData const& clockData,
+  TCTrackerAlg::RunTCTrackerAlg(detinfo::DetectorClocksData const& clockData,
                                     detinfo::DetectorPropertiesData const& detProp,
                                     std::vector<unsigned int>& hitsInSlice,
                                     int sliceID)
@@ -371,10 +365,11 @@ namespace tca {
       slices.pop_back();
       return;
     }
-
+/* handle mis-configuration in AnalyzeHits
     if (evt.aveHitRMS.size() != slc.nPlanes)
       throw art::Exception(art::errors::Configuration)
-        << " AveHitRMS vector size != the number of planes ";
+        << " AveHitRMS vector size < the number of planes ";
+*/
     if (tcc.recoSlice)
       std::cout << "Reconstruct " << hitsInSlice.size() << " hits in Slice " << sliceID
                 << " in TPC " << slc.TPCID.TPC << "\n";
@@ -401,10 +396,7 @@ namespace tca {
       FindPFParticles(clockData, detProp, slc);
     } // 3D matching requested
     KillPoorVertices(slc);
-    if (!slc.isValid) {
-      mf::LogVerbatim("TC") << "RunTrajCluster failed in MakeAllTrajClusters";
-      return;
-    }
+    if (!slc.isValid) return;
 
     // dump a trajectory?
     if (tcc.modes[kModeDebug] && tcc.dbgDump) DumpTj();
@@ -418,11 +410,11 @@ namespace tca {
     // clear vectors that are not needed later
     slc.mallTraj.resize(0);
 
-  } // RunTrajClusterAlg
+  } // RunTCTrackerAlg
 
   ////////////////////////////////////////////////
   void
-  TrajClusterAlg::ReconstructAllTraj(detinfo::DetectorPropertiesData const& detProp,
+  TCTrackerAlg::ReconstructAllTraj(detinfo::DetectorPropertiesData const& detProp,
                                      TCSlice& slc,
                                      CTP_t inCTP)
   {
@@ -767,7 +759,7 @@ namespace tca {
 
   //////////////////////////////////////////
   void
-  TrajClusterAlg::FindJunkTraj(TCSlice& slc, CTP_t inCTP)
+  TCTrackerAlg::FindJunkTraj(TCSlice& slc, CTP_t inCTP)
   {
     // Makes junk trajectories using unassigned hits
 
@@ -912,7 +904,7 @@ namespace tca {
 
   ////////////////////////////////////////////////
   std::vector<unsigned int>
-  TrajClusterAlg::FindJTHits(const TCSlice& slc, unsigned int iht)
+  TCTrackerAlg::FindJTHits(const TCSlice& slc, unsigned int iht)
   {
     // a helper function for FindJunkTraj
     std::vector<unsigned int> hitList;
@@ -953,7 +945,7 @@ namespace tca {
 
   //////////////////////////////////////////
   void
-  TrajClusterAlg::MergeTPHits(std::vector<unsigned int>& tpHits,
+  TCTrackerAlg::MergeTPHits(std::vector<unsigned int>& tpHits,
                               std::vector<recob::Hit>& newHitCol,
                               std::vector<unsigned int>& newHitAssns) const
   {
@@ -1014,7 +1006,7 @@ namespace tca {
 
   //////////////////////////////////////////
   recob::Hit
-  TrajClusterAlg::MergeTPHitsOnWire(std::vector<unsigned int>& tpHits) const
+  TCTrackerAlg::MergeTPHitsOnWire(std::vector<unsigned int>& tpHits) const
   {
     // merge the hits indexed by tpHits into one hit
 
@@ -1148,7 +1140,7 @@ namespace tca {
 
   /////////////////////////////////////////
   bool
-  TrajClusterAlg::CreateSlice(detinfo::DetectorClocksData const& clockData,
+  TCTrackerAlg::CreateSlice(detinfo::DetectorClocksData const& clockData,
                               detinfo::DetectorPropertiesData const& detProp,
                               std::vector<unsigned int>& hitsInSlice,
                               int sliceID)
@@ -1214,7 +1206,7 @@ namespace tca {
 
   /////////////////////////////////////////
   void
-  TrajClusterAlg::FinishEvent(detinfo::DetectorPropertiesData const& detProp)
+  TCTrackerAlg::FinishEvent(detinfo::DetectorPropertiesData const& detProp)
   {
     // final steps that involve correlations between slices
     // Stitch PFParticles between TPCs
@@ -1247,7 +1239,7 @@ namespace tca {
   } // FinishEvent
 
   /////////////////////////////////////////
-  void TrajClusterAlg::MakeSpacePointsFromPFP(const tca::PFPStruct& pfp,
+  void TCTrackerAlg::MakeSpacePointsFromPFP(const tca::PFPStruct& pfp,
        const std::vector<unsigned int>& newHitIndex, std::vector<recob::SpacePoint>& spts, 
        std::vector<unsigned int>& sptsHit)
   {
@@ -1285,7 +1277,7 @@ namespace tca {
   } // MakeSpacePointsFromPFP
 
   /////////////////////////////////////////
-  void TrajClusterAlg::MakeTrackFromPFP(const tca::PFPStruct& pfp,
+  void TCTrackerAlg::MakeTrackFromPFP(const tca::PFPStruct& pfp,
        const std::vector<unsigned int>& newHitIndex, recob::Track& trk, 
        std::vector<unsigned int>& trkHits)
   {

@@ -52,13 +52,13 @@ standard_tctrackeralg:      # previously standard_trajclusteralg
    # 0 dX match cut (cm)
    # 1 dY and dZ match cut (cm)
    # 2 max separation btw PFParticle end and 3D vertex
-   Match3DCuts: [ 0.5, 10000, 1, 2, 2.0, 2.5, 1000]
+   Match3DCuts: [ 0.5, 10000, 1, 2, 2.0, 2.0, 1000]
    # 0 dx (cm) matching cut
    # 1 max number of 3-plane matches for any Tj
    # 2 Attempt 2-view match?
    # 3 min number of TP3Ds in at least 2 planes to fit in each PFP section
    # 4 max pull for adding/rejecting TP3Ds in sections
-   # 5 suggested max ChiDOF for a SectionFit
+   # 5 target max ChiDOF for a SectionFit
    # 6 Don't match shower-like Tjs if > nShower-like TPs
    PFPStitchCuts: [ 0.02, 3, 2 ]
    # 0 = matching angle resolution (radians)

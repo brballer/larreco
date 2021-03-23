@@ -31,7 +31,7 @@ namespace tca {
   void MakePFParticles(detinfo::DetectorClocksData const& clockData,
                        detinfo::DetectorPropertiesData const& detProp,
                        TCSlice& slc,
-                       std::vector<MatchStruct> matVec,
+                       std::vector<MatchStruct> const& matVec,
                        unsigned short matVec_Iter);
   bool ReconcileTPs(TCSlice& slc, PFPStruct& pfp, bool prt);
   void ReconcileTPs(TCSlice& slc);
@@ -66,6 +66,14 @@ namespace tca {
                 unsigned short sfIndex,
                 unsigned short& fromPt,
                 unsigned short& npts);
+  void KillBadPts(detinfo::DetectorClocksData const& clockData,
+                  detinfo::DetectorPropertiesData const& detProp,
+                  const TCSlice& slc,
+                  PFPStruct& pfp, bool prt);
+  void TrimEndPts(detinfo::DetectorClocksData const& clockData,
+                  detinfo::DetectorPropertiesData const& detProp,
+                  const TCSlice& slc,
+                  PFPStruct& pfp, bool prt);
   bool FitSection(detinfo::DetectorClocksData const& clockData,
                   detinfo::DetectorPropertiesData const& detProp,
                   const TCSlice& slc,
@@ -86,7 +94,6 @@ namespace tca {
                 unsigned short npts,
                 unsigned short sfIndex,
                 float& chiDOF);
-  void ReconcileVertices(TCSlice& slc, PFPStruct& pfp, bool prt);
   void FillGaps3D(detinfo::DetectorClocksData const& clockData,
                   detinfo::DetectorPropertiesData const& detProp,
                   TCSlice& slc,
@@ -129,9 +136,15 @@ namespace tca {
   double PosSep(const Point3_t& pos1, const Point3_t& pos2);
   double PosSep2(const Point3_t& pos1, const Point3_t& pos2);
   bool SetMag(Vector3_t& v1, double mag);
-  void SetDirection(detinfo::DetectorClocksData const& clockData,
-                detinfo::DetectorPropertiesData const& detProp,
-                TCSlice& slc, PFPStruct& pfp, bool prt);
+  void Swap3Vs(detinfo::DetectorClocksData const& clockData,
+               detinfo::DetectorPropertiesData const& detProp, 
+               TCSlice& slc, PFPStruct& pfp, bool prt);
+  void Attach3Vs(detinfo::DetectorClocksData const& clockData,
+                 detinfo::DetectorPropertiesData const& detProp, 
+                 TCSlice& slc, PFPStruct& pfp, bool prt);
+  void FlagSmallAngle(detinfo::DetectorClocksData const& clockData,
+                      detinfo::DetectorPropertiesData const& detProp, 
+                      TCSlice& slc, PFPStruct& pfp, bool prt);
   void SetPFPdEdx(detinfo::DetectorClocksData const& clockData,
                 detinfo::DetectorPropertiesData const& detProp,
                 const TCSlice& slc,
@@ -207,12 +220,6 @@ namespace tca {
                   detinfo::DetectorPropertiesData const& detProp,
                   const TCSlice& slc,
                   PFPStruct& pfp);
-  void PrintTP3Ds(detinfo::DetectorClocksData const& clockData,
-                  detinfo::DetectorPropertiesData const& detProp,
-                  std::string someText,
-                  const TCSlice& slc,
-                  const PFPStruct& pfp,
-                  short printPts);
 } // namespace tca
 
 #endif // ifndef TRAJCLUSTERALGSPTUTILS_H

@@ -77,7 +77,7 @@ namespace tca {
     unsigned short NTraj{0};
     unsigned short Pass{0}; // Pass in which this vertex was created
     float ChiDOF{0};
-    // Topo: 0 = end0-end0, 1 = end0(1)-end1(0), 2 = end1-end1, 3 = CI3DV,
+    // Topo: 0 = end0-end0, 1 = end0(1)-end1(0), 2 = end1-end1, 3 = CI3V,
     //       4 = C3DIVIG, 5 = FHV, 6 = FHV2, 7 = SHCH, 8 = CTBC, 9 = Junk, 10 = DecayVx, 11 = neutral decay (pizero)
     //       12 = BraggSplit, 13 = ShrtLong2V, 14 = Reconcile2VTs
     short Topo{0};
@@ -162,7 +162,7 @@ namespace tca {
     double AngErr{0.1};             // Trajectory angle error
     float KinkSig{-1};              // kink significance = delta angle / angle error
     float Chg{0};                   // Charge
-    float AveChg{-1};               // Average charge of last ~20 TPs
+    float AveChg{-1};               // Average charge of last nPtsAve TPs
     float ChgPull{0.1};             //  = (Chg - AveChg) / ChgRMS
     float Delta{0};                 // Deviation between trajectory and hits (WSE)
     float DeltaRMS{0.02};           // RMS of Deviation between trajectory and hits (WSE)
@@ -293,7 +293,7 @@ namespace tca {
     geo::TPCID TPCID;
     int ID{0};
     int UID{0};                              // unique global ID
-    unsigned short MVI;                      // matVec index for detailed debugging
+    unsigned short MVI{0};                      // matVec index for detailed debugging
     std::bitset<8> Flags;                    //< see PFPFlags_t
     std::array<std::bitset<8>, 2> EndFlag{}; // Uses the same enum as Trajectory EndFlag
     std::bitset<BitSetSize> AlgMod; //< Allocate the first set of bits in AlgBit_t for 3D algs
@@ -321,7 +321,7 @@ namespace tca {
     kSmallAng3D,
     kKillBadPts3D,
     kMat3D, 
-    kDidPID3D,
+    kDoPID,
     kMaskHits, // 2D algorithms for Tjs here and below
     kMaskBadTPs,
     kMichel,
@@ -330,8 +330,8 @@ namespace tca {
     kRvPrp,
     kCHMUH,
     kSplit,
-    kComp3DVx,
-    kComp3DVxIG,
+    kCI3V,
+    kCI3VIG,
     kDecayVx,
     kHamVx,
     kHamVx2,
@@ -394,7 +394,6 @@ namespace tca {
     kEndBraggChkd,    ///< A check was made for a Bragg peak at this end 
     kEndOutFV,
     kEndNoFitVx,
-    kEnd2VConflict,   ///< there is a conflict between 2V and 3V assignments
     kFlagBitSize ///< don't mess with this line
   } EndFlag_t;
 

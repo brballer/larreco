@@ -79,6 +79,17 @@ namespace tca {
   std::string PrintPos(const TCSlice& slc, const Point2_t& pos);
   std::string PrintEndFlag(const Trajectory& tj, unsigned short end);
   std::string PrintEndFlag(const PFPStruct& pfp, unsigned short end);
+  void PrintAssns(detinfo::DetectorClocksData const& clockData,
+                  detinfo::DetectorPropertiesData const& detProp,
+                  std::string someText,
+                  const TCSlice& slc,
+                  const PFPStruct& pfp);
+  void PrintTP3Ds(detinfo::DetectorClocksData const& clockData,
+                  detinfo::DetectorPropertiesData const& detProp,
+                  std::string someText,
+                  const TCSlice& slc,
+                  const PFPStruct& pfp,
+                  short printPts);
 
 } // namespace tca
 

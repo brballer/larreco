@@ -273,6 +273,8 @@ namespace cluster {
     if (fSpacePointModuleLabel != "NA") {
       if (!evt.getByLabel(fSpacePointModuleLabel, InputSpts))
         throw cet::exception("TCTrackerModule") << "Failed to get a handle to SpacePoints\n";
+      if (fEventsProcessed == 0) mf::LogVerbatim("TC") << "Using SpacePoints from "
+                  << fSpacePointModuleLabel.label();
       tca::evt.sptHits.resize((*InputSpts).size(), {{UINT_MAX, UINT_MAX, UINT_MAX}});
       art::FindManyP<recob::Hit> hitsFromSpt(InputSpts, evt, fSpacePointHitAssnLabel);
       // TCTrackerAlg doesn't use the SpacePoint positions (only the assns to hits) but pass it
@@ -839,6 +841,7 @@ namespace cluster {
     evt.put(std::move(slc_cls_assn));
     evt.put(std::move(slc_pfp_assn));
     evt.put(std::move(slc_hit_assn));
+    ++fEventsProcessed;
   } // TCTracker::produce()
 
   ////////////////////////////////////////////////

@@ -3190,17 +3190,32 @@ namespace tca {
     // Don't let the calculated charge RMS dominate the default
     // RMS until it is well known. Start with 50% error on the
     // charge RMS
+    float npwc = 0;
     for (unsigned short ipt = tj.EndPt[0]; ipt <= tj.EndPt[1]; ++ipt) {
       auto& tp = tj.Pts[ipt];
       if (tp.Chg <= 0) continue;
       tp.ChgPull = (tp.Chg / tj.AveChg - 1) / tj.ChgRMS;
+      ++npwc;
     } // ipt
 
     // update the local charge average using NPtsAve of the preceding points.
     // Handle short Tjs first.
-    if (cnt < tcc.nPtsAve) {
-      for (auto& tp : tj.Pts)
-        tp.AveChg = tj.AveChg;
+    if (npwc < tcc.nPtsAve) {
+      if (tcc.useAlg[kNewCuts] && npwc > 5) {
+        // enough points to do a charge fit to better handle short
+        // stopping particles with a (possibly not detected) Bragg peak
+        ParFit chgFit;
+        // don't include the last point in the fit
+        FitPar(slc, tj, tj.EndPt[0]+1, npwc-2, 1, chgFit, 1);
+        if (chgFit.ChiDOF < 100) {
+          auto& tp0 = tj.Pts[tj.EndPt[0]];
+          for (auto& tp : tj.Pts) {
+            tp.AveChg = chgFit.Par0 + chgFit.ParSlp * (tp.Pos[0] - tp0.Pos[0]);
+          }
+          return;
+        }
+      } // npwc > 5
+      for (auto& tp : tj.Pts) tp.AveChg = tj.AveChg;
       return;
     }
 
@@ -3790,7 +3805,7 @@ namespace tca {
       mywarn << "Setting it to the default value of 6 ticks. You can disable this warning by\n";
       mywarn << "setting the fcl configuration something like this\n";
       mywarn << "physics.producers.<module name>.TCTrackerAlg.AveHitRMS: ";
-      mywarn << "[ rms_Induction1, rms_Induction2, rms_Collection ]\n";
+      mywarn << "[ rms_Induction1, rms_Induction2, rms_Collection ]";
     } // usingDefault
     evt.aveHitRMS.resize(nplanes, 6.);
     evt.aveHitRMSValid = true;
@@ -3800,6 +3815,38 @@ namespace tca {
     for (auto ahr : evt.aveHitRMS) myprt << " "<<ahr; 
     myprt << " ] ticks";
     if (usingDefault) myprt << " --> These are default values";
+
+    std::vector<float> rms(nplanes, 0);
+    std::vector<float> cnt(nplanes, 0);
+
+    for(unsigned short iht = 0; iht < (*evt.allHits).size(); ++iht) {
+    auto& hit = (*evt.allHits)[iht];
+    unsigned short plane = hit.WireID().Plane;
+    // require multiplicity one
+    if(hit.Multiplicity() != 1) continue;
+    // not-crazy Chisq/DOF
+    if(hit.GoodnessOfFit() < 0 || hit.GoodnessOfFit() > 500) continue;
+    // don't let a lot of runt hits screw up the calculation
+    if(hit.PeakAmplitude() < 1) continue;
+    rms[plane] += hit.RMS();
+    ++cnt[plane];
+    // quit if enough hits are found
+    bool allDone = true;
+    for(unsigned short plane = 0; plane < nplanes; ++plane) if(cnt[plane] < 200) allDone = false;
+    if(allDone) break;
+  } // iht
+  mf::LogVerbatim mywarn("TC");
+  myprt << "\nThe average RMS of the first 200 well-reconstructed Multiplicity 1 hits is";
+  for (unsigned short plane = 0; plane < nplanes; ++plane) {
+    if (cnt[plane] > 100) {
+      rms[plane] /= cnt[plane];
+      myprt << std::fixed << std::setprecision(2);
+      myprt << " " << rms[plane];
+    } else {
+      myprt <<" ?";
+    }
+  }
+
     return true;
   } // Analyze hits
 

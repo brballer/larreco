@@ -206,19 +206,22 @@ namespace tca {
         if(tcc.dbgStp) mf::LogVerbatim("TC")<<" Third point quality check";
         // ensure that the last hit added is in the same direction as the first two.
         // This is a simple way of doing it
-        bool badTj = (PosSep2(tj.Pts[0].HitPos, tj.Pts[2].HitPos) < PosSep2(tj.Pts[0].HitPos, tj.Pts[1].HitPos));
+        bool badSep = (PosSep2(tj.Pts[0].HitPos, tj.Pts[2].HitPos) < PosSep2(tj.Pts[0].HitPos, tj.Pts[1].HitPos));
         // ensure that this didn't start as a small angle trajectory and immediately turn
         // into a large angle one
-        if(!badTj && tj.Pts[lastPt].AngleCode > tcc.maxAngleCode[tj.Pass]) badTj = true;
+        bool badAngleCode = (tj.Pts[lastPt].AngleCode > tcc.maxAngleCode[tj.Pass]);
         // check for a large change in angle
-        if(!badTj) {
-          float dang = DeltaAngle(tj.Pts[0].Ang, tj.Pts[2].Ang);
-          if(dang > 0.5) badTj = false;
-        }
+        float dang = DeltaAngle(tj.Pts[0].Ang, tj.Pts[2].Ang);
+        bool badDang = (dang > 0.5);
         //check for a wacky delta
-        if(!badTj && tj.Pts[2].Delta > 2) badTj = true;
+        bool badTj = badSep || badAngleCode || badDang;
         if(badTj) {
-          if(tcc.dbgStp) mf::LogVerbatim("TC")<<" Bad Tj found on the third point. Quit stepping.";
+          if(tcc.dbgStp) {
+            mf::LogVerbatim myprt("TC");
+            myprt << "badSep " << badSep << " badAngleCode " <<badAngleCode << "for this pass";
+            myprt << " badDang " << badDang << " Stopping... ";
+            PrintTrajectory("Bad", slc, tj, USHRT_MAX);
+          }
           tj.IsGood = false;
           return;
         } else if (tcc.dbgStp) {
@@ -343,13 +346,13 @@ namespace tca {
   void SetStrategy(TCSlice& slc, Trajectory& tj)
   {
     // Determine if the tracking strategy is appropriate and make some tweaks if it isn't
-    if(tjfs.empty()) return;
+    if (tjfs.empty()) return;
     // analyze the last forecast
     auto& tjf = tjfs[tjfs.size() - 1];
 
     auto& lastTP = tj.Pts[tj.EndPt[1]];
 
-    if(!tcc.useAlg[kLEPhys]) {
+    if (!tcc.useAlg[kLEPhys]) {
       // Stay in Slowing strategy if we are in it and keep the number of points fit constant
       if(tj.Strategy[kSlowing]) {
         lastTP.NTPsFit = 5;
@@ -359,7 +362,7 @@ namespace tca {
 
     float npwc = NumPtsWithCharge(slc, tj, false);
     // Keep using the StiffMu strategy if the tj is long and MCSMom is high
-    if(tj.Strategy[kStiffMu] && tj.MCSMom > 800 && npwc > 200) {
+    if (tj.Strategy[kStiffMu] && tj.MCSMom > 800 && npwc > 200) {
       if(tcc.dbgStp) mf::LogVerbatim("TC")<<"SetStrategy: Keep using the StiffMu strategy";
       return;
     }
@@ -368,16 +371,20 @@ namespace tca {
     bool chgIncreasing = (tjf.chgSlope > 0);
     // A showering-electron-like trajectory
     bool shLike = false;
-    if(tcc.useAlg[kLEPhys]) {
+    if (tcc.useAlg[kLEPhys]) {
       // large angle tracks can appear to be shower-like due to a higher hit multiplicity
       shLike = (lastTP.AngleCode < 1 && tjf.outlook > 3 && chgIncreasing && !tkLike);
     } else {
       shLike = (tjf.outlook > 3 && chgIncreasing && !tkLike);
     }
-    if(!shLike) shLike = tjf.showerLikeFraction > 0.5;
+    if (!shLike) shLike = tjf.showerLikeFraction > 0.5;
     float momRat = 0;
-    if(tj.MCSMom > 0) momRat = (float)tjf.MCSMom / (float)tj.MCSMom;
-    if(tcc.dbgStp) {
+    if( tj.MCSMom > 0) momRat = (float)tjf.MCSMom / (float)tj.MCSMom;
+    // Decrease the next forecast update if track-like with increasing charge and low forecast MCSMOM
+    if (npwc == 6 && chgIncreasing && tjf.leavesBeforeEnd && tjf.MCSMom < 100 && tjf.nextForecastUpdate > 12) {
+      tjf.nextForecastUpdate = 12;
+    }
+    if (tcc.dbgStp) {
       mf::LogVerbatim myprt("TC");
       myprt<<"SetStrategy: npwc "<<npwc<<" outlook "<<tjf.outlook;
       myprt<<" tj MCSMom "<<tj.MCSMom<<" forecast MCSMom "<<tjf.MCSMom;
@@ -441,7 +448,7 @@ namespace tca {
       tj.StartEnd = 0;
       return;
     } // Stiff electron
-    if(!tcc.useAlg[kNewCuts] && shLike && !tjf.leavesBeforeEnd) {
+    if (!tcc.useAlg[kNewCuts] && shLike && !tjf.leavesBeforeEnd) {
       if(tcc.dbgStp) mf::LogVerbatim("TC")<<"SetStrategy: Inside a shower. Use the StiffEl strategy";
       tj.Strategy.reset();
       tj.Strategy[kStiffEl] = true;
@@ -449,7 +456,7 @@ namespace tca {
       tj.StartEnd = 0;
       return;
     } // StiffEl
-    if(!tcc.useAlg[kLEPhys]) {
+    if (!tcc.useAlg[kLEPhys]) {
       tj.Strategy.reset();
       tj.Strategy[kNormal] = true;
     } // !tcc.useAlg[kLEPhys]

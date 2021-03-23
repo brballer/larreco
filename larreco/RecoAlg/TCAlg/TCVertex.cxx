@@ -744,7 +744,7 @@ namespace tca {
   void
   MakeDecayVertices(TCSlice& slc, const CTP_t& inCTP)
   {
-    // Look for a dsingle poorly reconstructed daughter Tj near the end of a
+    // Look for a single poorly reconstructed daughter Tj near the end of a
     // Tj with a Bragg peak and make a vertex between them. If a vertex already
     // exists, the vertex position is moved to the position of the Bragg peak
     // and the Topo flag is set to 10 (decay vertex)
@@ -1626,6 +1626,10 @@ namespace tca {
             if (dX > tcc.vtx3DCuts[0]) continue;
             double y = -1000, z = -1000;
             tcc.geom->IntersectionPoint(iWire, jWire, ipl, jpl, cstat, tpc, y, z);
+            if (!std::isfinite(y)) {
+              std::cout<<"oops "<<cstat<<" "<<tpc<<" "<<ipl<<":"<<iWire<<" "<<jpl<<":"<<jWire<<"\n";
+              continue;
+            }
             if (y < slc.yLo || y > slc.yHi || z < slc.zLo || z > slc.zHi) continue;
             unsigned int kpl = 3 - ipl - jpl;
             float kX = 0.5 * (vX[ivx] + vX[jvx]);
@@ -2721,11 +2725,11 @@ namespace tca {
   CompleteIncomplete3DVerticesInGaps(detinfo::DetectorPropertiesData const& detProp, TCSlice& slc)
   {
 
-    if (!tcc.useAlg[kComp3DVxIG]) return;
+    if (!tcc.useAlg[kCI3VIG]) return;
     if (slc.nPlanes != 3) return;
 
-    bool prt = (tcc.modes[kModeDebug] && tcc.dbgSlc && tcc.dbgAlg[kComp3DVxIG]);
-    if (prt) mf::LogVerbatim("TC") << "Inside CI3DVIG:";
+    bool prt = (tcc.modes[kModeDebug] && tcc.dbgSlc && tcc.dbgAlg[kCI3VIG]);
+    if (prt) mf::LogVerbatim("TC") << "Inside CI3VIG:";
 
     for (unsigned short iv3 = 0; iv3 < slc.vtx3s.size(); ++iv3) {
       Vtx3Store& vx3 = slc.vtx3s[iv3];
@@ -2756,7 +2760,7 @@ namespace tca {
       // Give it a bogus pass to indicate it wasn't created while stepping
       aVtx.Pass = 9;
       if (prt)
-        mf::LogVerbatim("TC") << "CI3DVIG: Incomplete vertex " << iv3 << " in plane " << mPlane
+        mf::LogVerbatim("TC") << "CI3VIG: Incomplete vertex " << iv3 << " in plane " << mPlane
                               << " wire " << vx3.Wire << " Made 2D vertex ";
       std::vector<int> tjIDs;
       std::vector<unsigned short> tjEnds;
@@ -2779,7 +2783,7 @@ namespace tca {
             ptSep = tp.Pos[0] - aVtx.Pos[0] - dwc;
           }
           if (prt)
-            mf::LogVerbatim("TC") << "CI3DVIG: tj ID " << slc.tjs[itj].ID << " doca " << doca
+            mf::LogVerbatim("TC") << "CI3VIG: tj ID " << slc.tjs[itj].ID << " doca " << doca
                                   << " ptSep " << ptSep;
           if (ptSep < -2 || ptSep > 2) continue;
           // don't clobber an existing association
@@ -2798,13 +2802,13 @@ namespace tca {
         for (unsigned short ii = 0; ii < tjIDs.size(); ++ii) {
           unsigned short itj = tjIDs[ii] - 1;
           slc.tjs[itj].VtxID[tjEnds[ii]] = aVtx.ID;
-          slc.tjs[itj].AlgMod[kComp3DVxIG] = true;
+          slc.tjs[itj].AlgMod[kCI3VIG] = true;
         } // ii
         SetVx2Score(slc);
         vx3.Vx2ID[mPlane] = aVtx.ID;
         vx3.Wire = -1;
         if (prt)
-          mf::LogVerbatim("TC") << "CI3DVIG: new vtx 2V" << aVtx.ID << " points to 3V" << vx3.ID;
+          mf::LogVerbatim("TC") << "CI3VIG: new vtx 2V" << aVtx.ID << " points to 3V" << vx3.ID;
       }
     } // vx3
 
@@ -2818,13 +2822,13 @@ namespace tca {
     // 2DVtxID that are near the projected wire. This may trigger splitting trajectories,
     // assigning them to a new 2D vertex and completing 3D vertices
 
-    if (!tcc.useAlg[kComp3DVx]) return;
+    if (!tcc.useAlg[kCI3V]) return;
     if (slc.nPlanes != 3) return;
 
-    bool prt = (tcc.modes[kModeDebug] && tcc.dbgSlc && tcc.dbgAlg[kComp3DVx]);
+    bool prt = (tcc.modes[kModeDebug] && tcc.dbgSlc && tcc.dbgAlg[kCI3V]);
 
     float maxdoca = 3;
-    if (prt) mf::LogVerbatim("TC") << "Inside CI3DV with maxdoca set to " << maxdoca;
+    if (prt) mf::LogVerbatim("TC") << "Inside CI3V with maxdoca set to " << maxdoca;
     unsigned short ivx3 = 0;
     for (auto& vx3 : slc.vtx3s) {
       // ignore obsolete vertices
@@ -2832,18 +2836,10 @@ namespace tca {
       // check for a completed 3D vertex
       if (vx3.Wire < 0) continue;
       unsigned short mPlane = USHRT_MAX;
-      // look for vertices in the induction plane in which the charge requirement wasn't imposed
-      bool indPlnNoChgVtx = false;
       for (unsigned short plane = 0; plane < slc.nPlanes; ++plane) {
-        if (vx3.Vx2ID[plane] > 0) {
-          auto& vx2 = slc.vtxs[vx3.Vx2ID[plane] - 1];
-          if (vx2.Stat[kVxIndPlnNoChg]) indPlnNoChgVtx = true;
-          continue;
-        }
-        mPlane = plane;
+        if (vx3.Vx2ID[plane] == 0) mPlane = plane;
       } // ipl
       if (mPlane == USHRT_MAX) continue;
-      if (indPlnNoChgVtx) continue;
       CTP_t mCTP = EncodeCTP(vx3.TPCID.Cryostat, vx3.TPCID.TPC, mPlane);
       // X position of the purported missing vertex
       // A TP for the missing 2D vertex
@@ -2851,16 +2847,13 @@ namespace tca {
       vtp.Pos[0] = vx3.Wire;
       vtp.Pos[1] = detProp.ConvertXToTicks(vx3.X, mPlane, vx3.TPCID.TPC, vx3.TPCID.Cryostat) *
                    tcc.unitsPerTick;
-      if (prt)
-        mf::LogVerbatim("TC") << "CI3DV 3V" << vx3.ID << " Pos " << mPlane << ":"
-                              << PrintPos(slc, vtp.Pos);
       std::vector<int> tjIDs;
       std::vector<unsigned short> tjPts;
       for (auto& tj : slc.tjs) {
         if (tj.CTP != mCTP) continue;
         if (tj.AlgMod[kKilled] || tj.AlgMod[kHaloTj]) continue;
         if (tj.Pts.size() < 6) continue;
-        if (tj.AlgMod[kComp3DVx]) continue;
+        if (tj.AlgMod[kCI3V]) continue;
         float doca = maxdoca;
         // find the closest distance between the vertex and the trajectory
         unsigned short closePt = 0;
@@ -2870,7 +2863,7 @@ namespace tca {
         // trajectory, e.g. high multiplicity hits or larger than normal charge
         if (RefineVtxPosition(slc, tj, closePt, 3, false)) vtp.Pos = tj.Pts[closePt].Pos;
         if (prt)
-          mf::LogVerbatim("TC") << "CI3DV 3V" << vx3.ID << " candidate  T" << tj.ID << " vtx pos "
+          mf::LogVerbatim("TC") << " nearby  T" << tj.ID << " candidate vtx pos "
                                 << PrintPos(slc, vtp.Pos) << " doca " << doca << " closeTP "
                                 << PrintPos(slc, tj.Pts[closePt]);
         tjIDs.push_back(tj.ID);
@@ -2942,7 +2935,7 @@ namespace tca {
               mf::LogVerbatim("TC")
                 << " T" << slc.tjs[itj].ID << " has vertex 2V" << slc.tjs[itj].VtxID[end]
                 << " at end " << end << ". oldSep " << oldSep;
-            if (dpt < oldSep) { MakeVertexObsolete("CI3DV", slc, oldVx, true); }
+            if (dpt < oldSep) { MakeVertexObsolete("CI3V", slc, oldVx, true); }
             else {
               continue;
             }
@@ -2951,7 +2944,7 @@ namespace tca {
           ++newVtx.NTraj;
           if (prt)
             mf::LogVerbatim("TC") << " attach Traj T" << slc.tjs[itj].ID << " at end " << end;
-          slc.tjs[itj].AlgMod[kComp3DVx] = true;
+          slc.tjs[itj].AlgMod[kCI3V] = true;
           vpos = slc.tjs[itj].Pts[slc.tjs[itj].EndPt[end]].Pos;
         }
         else {
@@ -2974,14 +2967,14 @@ namespace tca {
           // and for the new trajectory
           SetPDGCode(slc, slc.tjs.size() - 1);
         } // closePt is not near an end, so split the trajectory
-        slc.tjs[itj].AlgMod[kComp3DVx] = true;
+        slc.tjs[itj].AlgMod[kCI3V] = true;
         unsigned short newtj = slc.tjs.size() - 1;
-        slc.tjs[newtj].AlgMod[kComp3DVx] = true;
+        slc.tjs[newtj].AlgMod[kCI3V] = true;
       } // ii
       if (newVtx.NTraj == 0) {
         // A failure occurred. Recover
         if (prt) mf::LogVerbatim("TC") << "  Failed. Recover and delete vertex " << newVtx.ID;
-        MakeVertexObsolete("CI3DV", slc, newVtx, true);
+        MakeVertexObsolete("CI3V", slc, newVtx, true);
       }
       else {
         // success
@@ -2997,12 +2990,13 @@ namespace tca {
         SetVx2Score(slc);
         if (prt) {
           mf::LogVerbatim myprt("TC");
-          myprt << " Success: new 2V" << newVtx.ID << " at " << (int)newVtx.Pos[0] << ":"
-                << (int)newVtx.Pos[1] / tcc.unitsPerTick;
-          myprt << " points to 3V" << vx3.ID;
-          myprt << " TjIDs:";
-          for (auto& tjID : tjIDs)
-            myprt << " T" << std::to_string(tjID);
+          myprt << " Success: new 2V" << newVtx.ID << " Score " <<newVtx.Score;
+//          myprt << " at " << (int)newVtx.Pos[0] << ":" << (int)newVtx.Pos[1] / tcc.unitsPerTick;
+          myprt << " at " << PrintPos(slc, newVtx.Pos);
+          myprt << " assn to 3V" << vx3.ID;
+          myprt << " -> ";
+          for (auto& tid : vx3.Vx2ID)
+            myprt << " 2V" << tid;
         } // prt
       }   // success
       ++ivx3;

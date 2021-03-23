@@ -32,12 +32,15 @@
 #include "lardataobj/RecoBase/Cluster.h"
 #include "lardataobj/RecoBase/Hit.h"
 #include "lardataobj/RecoBase/PFParticle.h"
+#include "lardataobj/RecoBase/Track.h"
 #include "larsim/MCCheater/BackTrackerService.h"
 #include "larsim/MCCheater/ParticleInventoryService.h"
 #include "nug4/ParticleNavigation/ParticleList.h"
 #include "nusimdata/SimulationBase/MCTruth.h"
 
 #include "art/Framework/Core/EDAnalyzer.h"
+#include "TH1.h"
+//#include "TProfile.h"
 
 /// Cluster finding and building
 namespace cluster {
@@ -69,6 +72,8 @@ namespace cluster {
                            MatchStruct const& match,
                            unsigned short inPlane, unsigned int& first, unsigned int& last);
 
+    bool StopsInTPC(art::ServiceHandle<geo::Geometry const>& geom,
+                    simb::MCParticle const& mcp, geo::TPCID& inTPCID);
     art::InputTag fClusterModuleLabel;
     art::ProductID fHitCollectionProductID;
     std::array<float, 2> fElecKERange;
@@ -77,6 +82,7 @@ namespace cluster {
     std::array<float, 2> fKaonKERange;
     std::array<float, 2> fProtKERange;
     bool fSkipCosmics;
+    bool fRequireStoppingPtcl;
     short fPrintLevel;
 
     std::array<std::string, 5> fNames {{"electron", "muon", "pion", "kaon", "proton"}};
@@ -88,6 +94,11 @@ namespace cluster {
     unsigned int fEventsProcessed {0};
     std::array<std::array<float, 5>, 5> fPIDTrueReco {{0}};
     bool fPIDExists {false};
+
+    TH1F* fDeltaAngle;
+    TH1F* fDeltaX;
+    TH1F* fDeltaY;
+    TH1F* fDeltaZ;
 
   }; // class ClusterAna
 
@@ -105,6 +116,7 @@ namespace cluster {
     , fKaonKERange(pset.get<std::array<float,2>>("KaonKERange"))
     , fProtKERange(pset.get<std::array<float,2>>("ProtKERange"))
     , fSkipCosmics(pset.get<bool>("SkipCosmics", true))
+    , fRequireStoppingPtcl(pset.get<bool>("RequireStoppingPtcl", false))
     , fPrintLevel(pset.get<short>("PrintLevel"))
   {
 
@@ -114,7 +126,11 @@ namespace cluster {
   void
   ClusterAna::beginJob()
   {
-
+    art::ServiceHandle<art::TFileService> tfs;
+    fDeltaAngle = tfs->make<TH1F>("fDeltaAngle","Reco - True Start Angle", 300, 0., 3.15);
+    fDeltaX = tfs->make<TH1F>("fDeltaX","Reco - True dX", 500, -50., 50.);
+    fDeltaY = tfs->make<TH1F>("fDeltaY","Reco - True dY", 500, -50., 50.);
+    fDeltaZ = tfs->make<TH1F>("fDeltaZ","Reco - True dZ", 500, -50., 50.);
   }
 
   //------------------------------------------------------------------
@@ -134,7 +150,7 @@ namespace cluster {
     for(unsigned short indx = 0; indx < 5; ++indx) {
       if (fSum[indx] == 0) continue;
       float aveEP = fEffPurSum[indx] / fSum[indx];
-      myprt << " " << fNames[indx] <<" " << std::fixed << std::setprecision(2) << aveEP;
+      myprt << " " << fNames[indx] <<" " << std::fixed << std::setprecision(3) << aveEP;
       totSum += fSum[indx];
       totEPSum += fEffPurSum[indx];
     } // indx
@@ -143,7 +159,7 @@ namespace cluster {
       myprt << " AveEP: " << totEPSum;
       myprt << " nBad/nMCPInPln " << fNBadEP << "/" << (int)totSum;
     }
-    if (fPIDExists) {
+    if (fRequireStoppingPtcl && fPIDExists) {
       myprt << "\n PID matrix: Truth in rows, Reco in columns\n";
       myprt << "           failed    muon    pion    kaon  proton\n";
       for (unsigned short truCode = 0; truCode < 5; ++truCode) {
@@ -175,13 +191,16 @@ namespace cluster {
     if (!evt.getByLabel(mcpLabel, mcps)) return;
     if ((*mcps).empty()) return;
     art::ServiceHandle<cheat::ParticleInventoryService const> pi_serv;
+    art::ServiceHandle<geo::Geometry const> geom;
+
     // limit the number of print output lines
     unsigned short nPrtMCP = 0;
     unsigned short nPrtSel = 0;
     // temporary list of the MCParticle index to be used and the matching
     // PFParticle index
-    //
     std::vector<std::pair<unsigned int, unsigned int>> mcpiPFPiList;
+    // TPC in which the MCParticle stops
+    std::vector<unsigned short> stopsInTPC;
     for(unsigned int mcpi = 0; mcpi < (*mcps).size(); ++mcpi) {
       auto& mcp = (*mcps)[mcpi];
       int tid = mcp.TrackId();
@@ -191,6 +210,10 @@ namespace cluster {
       // consider electrons, muons, pions, kaons and protons
       auto pdgIndx = PDGCodeIndex(mcp);
       if (pdgIndx < 0) continue;
+      // require that it stop inside a TPC? This is required for checking
+      // calorimetric PID
+      geo::TPCID inTPCID;
+      bool itStops = StopsInTPC(geom, mcp, inTPCID);
       if (fPrintLevel > 2) {
         mf::LogVerbatim myprt("ClusterAna");
         if(nPrtMCP < 500) {
@@ -200,11 +223,14 @@ namespace cluster {
           myprt << ", T " << (int)TMeV << " MeV";
           myprt << ", Mother " << mcp.Mother();
           myprt << ", Process " << mcp.Process();
+          if (itStops) myprt << ". Stops in TPC " << inTPCID.TPC;
         } else {
           myprt << "--> truncated print of " << (*mcps).size() << " MCParticles";
         }
       } // fPrintLevel > 2
+      if (fRequireStoppingPtcl && !itStops) continue;
       mcpiPFPiList.push_back(std::make_pair(mcpi, UINT_MAX));
+      stopsInTPC.push_back(inTPCID.TPC);
     } // mcpi
     if (mcpiPFPiList.empty()) return;
 
@@ -227,12 +253,14 @@ namespace cluster {
     if((*allHits).size() < 3) return;
     std::vector<unsigned int> hitMCPIndex((*allHits).size(), UINT_MAX);
 
-    // look for a cluster -> PFParticle assn
+    // look for cluster -> PFParticle assns
     art::FindManyP<recob::PFParticle> fmpfp(allCls, evt, fClusterModuleLabel);
     auto allPFP = evt.getValidHandle<std::vector<recob::PFParticle>>(fClusterModuleLabel);
+    // and PFParticle -> Track assns
+    art::FindManyP<recob::Track> fmtrk(allPFP, evt, fClusterModuleLabel);
+    auto allTrk = evt.getValidHandle<std::vector<recob::Track>>(fClusterModuleLabel);
 
     art::ServiceHandle<cheat::BackTrackerService const> bt_serv;
-    art::ServiceHandle<geo::Geometry const> geom;
     auto const clockData = art::ServiceHandle<detinfo::DetectorClocksService const>()->DataFor(evt);
 
     // Create/populate a MatchStruct in each TPC if there is a MC-matched hit in it
@@ -241,6 +269,9 @@ namespace cluster {
     unsigned int nMatched = 0;
     for(unsigned int iht = 0; iht < (*allHits).size(); ++iht) {
       auto& hit = (*allHits)[iht];
+      unsigned int tpc = hit.WireID().TPC;
+      if (fRequireStoppingPtcl &&
+          std::find(stopsInTPC.begin(), stopsInTPC.end(), tpc) == stopsInTPC.end()) continue;
       auto tides = bt_serv->HitToTrackIDEs(clockData, hit);
       for(auto& tide : tides) {
         int tid = tide.trackID;
@@ -255,7 +286,6 @@ namespace cluster {
       } // tide
       if(hitMCPIndex[iht] == UINT_MAX) continue;
       // Update or create the appropriate MatchStruct
-      unsigned int tpc = hit.WireID().TPC;
       unsigned int indx = 0;
       for(indx = 0; indx < matches.size(); ++indx) {
         auto& match = matches[indx];
@@ -375,7 +405,13 @@ namespace cluster {
             mpPair.second = pfpi;
             break;
           } // mpPair
-        } // cnt > 1
+        } else {
+          // Not enough hits in two planes to rconstruct a track.
+          // Clobber the mcpiPFPiList entry
+          for (auto& mpPair : mcpiPFPiList) {
+            if (mpPair.first == match.mcpi) mpPair.first = UINT_MAX;
+          } // mpPair
+        } // Not enough hits in two planes to rconstruct a PFParticle.
       } // match
     } // isValid
 
@@ -389,6 +425,10 @@ namespace cluster {
       int recCode = 0;
       if (pfpi < (*allPFP).size()) recCode = PDGCodeIndex((*allPFP)[pfpi]);
       if (recCode < 0 || recCode > 4) continue;
+      if (fPrintLevel > 1 && fRequireStoppingPtcl && truCode != recCode) {
+        mf::LogVerbatim myprt("TC");
+        myprt<<"BadPID "<<evt.event()<<" mcpi "<<mcpi<<" truCode "<<truCode<<" recCode "<<recCode;
+      }
       ++fPIDTrueReco[truCode][recCode];
       fPIDExists = true;
     } // ii
@@ -418,6 +458,7 @@ namespace cluster {
             }
           }
           myprt << "\n";
+          myprt << "Ends at " << std::setprecision(5) << mcp.EndX()<< " "<< mcp.EndY()<< " "<< mcp.EndZ()<< "\n";
           for(unsigned int plane = 0; plane < geom->Nplanes(); ++plane) {
             if (match.firstHit[plane] >= (*allHits).size()) continue;
             if (match.mcpTruHitCount[plane] < 3) continue;
@@ -451,6 +492,34 @@ namespace cluster {
         myprt << "--> truncated print of " << matches.size() << " selected MCParticles";
       }
     } // fPrintLevel > 1
+
+    // compare MCParticle and Track Start direction and End position
+    if (fmtrk.isValid()) {
+      for (auto& mpPair : mcpiPFPiList) {
+        unsigned int mcpi = mpPair.first;
+        if (mcpi >= (*mcps).size()) continue;
+        unsigned int pfpi = mpPair.second;
+        if (pfpi >= (*allPFP).size()) continue;
+        auto& trks = fmtrk.at(pfpi);
+        if (trks.empty()) continue;
+        auto& mcp = (*mcps)[mcpi];
+        recob::tracking::Vector_t tDir(mcp.Px(), mcp.Py(), mcp.Pz());
+        auto& trk = trks[0];
+        recob::tracking::Vector_t rDir(trk->StartDirection().X(),
+                                       trk->StartDirection().Y(),
+                                       trk->StartDirection().Z());
+        float dang = acos(tDir.Unit().Dot(rDir));
+        fDeltaAngle->Fill(dang);
+        if (fPrintLevel > 1 && std::abs(trk->End().X() - mcp.EndX()) > 5) {
+          mf::LogVerbatim myprt("TC");
+          myprt << "BadEndVx "<<evt.event() << " trk " << trk->ID()<<" pdg "<<mcp.PdgCode();
+          myprt << " len " << trk->Length();
+        }
+        fDeltaX->Fill(trk->End().X() - mcp.EndX());
+        fDeltaY->Fill(trk->End().Y() - mcp.EndY());
+        fDeltaZ->Fill(trk->End().Z() - mcp.EndZ());
+      } // mpPair
+    } // Tracks exist
 
     // Calculate Efficiency and Purity
     ++fEventsProcessed;
@@ -499,6 +568,31 @@ namespace cluster {
     } // match
 
   } // analyze
+
+  //------------------------------------------------------------------
+  bool
+  ClusterAna::StopsInTPC(art::ServiceHandle<geo::Geometry const>& geom,
+                         simb::MCParticle const& mcp, geo::TPCID& inTPCID)
+  {
+    // returns true with a valied TPCID if the MCParticle stops
+    // within 5 cm of a boundary of a TPC
+    float abit = 5;
+    for (const geo::TPCID& tpcid : geom->IterateTPCIDs()) {
+      const geo::TPCGeo& TPC = geom->TPC(tpcid);
+      double local[3] = {0., 0., 0.};
+      double world[3] = {0., 0., 0.};
+      TPC.LocalToWorld(local, world);
+      if (mcp.EndX() < world[0] - geom->DetHalfWidth(tpcid) + abit) continue;
+      if (mcp.EndX() > world[0] + geom->DetHalfWidth(tpcid) - abit) continue;
+      if (mcp.EndY() < world[1] - geom->DetHalfHeight(tpcid) + abit) continue;
+      if (mcp.EndY() > world[1] + geom->DetHalfHeight(tpcid) - abit) continue;
+      if (mcp.EndZ() < world[2] - geom->DetLength(tpcid) / 2 + abit) continue;
+      if (mcp.EndZ() > world[2] + geom->DetLength(tpcid) / 2 - abit) continue;
+      inTPCID = tpcid;
+      return true;
+    } // tpcid
+    return false;
+  } // StopsInTPC
 
   //------------------------------------------------------------------
   void

@@ -365,11 +365,6 @@ namespace tca {
       slices.pop_back();
       return;
     }
-/* handle mis-configuration in AnalyzeHits
-    if (evt.aveHitRMS.size() != slc.nPlanes)
-      throw art::Exception(art::errors::Configuration)
-        << " AveHitRMS vector size < the number of planes ";
-*/
     if (tcc.recoSlice)
       std::cout << "Reconstruct " << hitsInSlice.size() << " hits in Slice " << sliceID
                 << " in TPC " << slc.TPCID.TPC << "\n";
@@ -384,8 +379,6 @@ namespace tca {
     Find3Vs(detProp, slc);
     KillOrphan2Vs(detProp, slc);
     ScoreVertices(slc);
-    // Define the ParentID of trajectories using the vertex score
-//    DefineTjParents(slc, false);
     for (unsigned short plane = 0; plane < slc.nPlanes; ++plane) {
       CTP_t inCTP = EncodeCTP(slc.TPCID.Cryostat, slc.TPCID.TPC, plane);
       if (!ChkVtxAssociations(slc, inCTP)) {
@@ -1292,8 +1285,8 @@ namespace tca {
     std::vector<recob::Track::Point_t> positions;
     std::vector<recob::Track::Vector_t> directions;
     std::vector<recob::TrajectoryPointFlags> tpFlags;
-    // index of the hit in the new hit collection
 
+    using tpft = recob::TrajectoryPointFlagTraits;
     for(unsigned int pt = 0; pt < pfp.TP3Ds.size(); ++pt) {
       auto& tp3d = pfp.TP3Ds[pt];
       if(tp3d.TPIndex >= (*evt.allHits).size()) continue;
@@ -1313,11 +1306,18 @@ namespace tca {
       // Map the Track flag bits from the TP Environment bitset
       for(unsigned short ib = 0; ib < 8; ++ib) {
         if(!tp.Environment[ib]) continue;
-        if(ib == kEnvOverlap) mask.set(recob::TrajectoryPointFlagTraits::Shared);
-        if(ib == kEnvNotGoodWire) mask.set(recob::TrajectoryPointFlagTraits::DetectorIssue);
+        if(ib == kEnvOverlap) mask.set(tpft::Shared);
+        if(ib == kEnvNotGoodWire) mask.set(tpft::DetectorIssue);
         // Not all hits in the multiplet were used in the TP
-        if(ib == kEnvUnusedHits) mask.set(recob::TrajectoryPointFlagTraits::Suspicious);
+        if(ib == kEnvUnusedHits) mask.set(tpft::Suspicious);
       } // ib
+      // set the TrackReserved1 flag to indicate that a Bragg peak was found
+      if (pt == 0 || pt == pfp.TP3Ds.size()-1) {
+        unsigned short end = 1;
+        if (pt == 0) end = 0;
+        if (pfp.EndFlag[end][kEndBragg]) mask.set(tpft::TrackReserved1);
+        if (pfp.EndFlag[end][kHitsAfterEnd]) mask.set(tpft::TrackReserved2);
+      } // end point
 
       recob::Track::Point_t pos = {tp3d.Pos[0], tp3d.Pos[1], tp3d.Pos[2]};
       recob::Track::Vector_t dir = {tp3d.Dir[0], tp3d.Dir[1], tp3d.Dir[2]};

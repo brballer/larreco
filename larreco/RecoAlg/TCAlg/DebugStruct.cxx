@@ -1281,8 +1281,155 @@ namespace tca {
     return std::to_string(wire) + ":" + std::to_string(time);
   } // PrintPos
 
+  ////////////////////////////////////////////////
+  void
+  PrintAssns(detinfo::DetectorClocksData const& clockData,
+             detinfo::DetectorPropertiesData const& detProp,
+             std::string someText,
+             const TCSlice& slc,
+             const PFPStruct& pfp)
+  {
+    // Print P -> T -> 2V -> 3V -> 2V assns
+    mf::LogVerbatim myprt("TC");
+    myprt << "PrintAssns in " << someText;
+    myprt << " for P" <<pfp.ID << " MVI " << pfp.MVI << "\n";
+    for (auto tid : pfp.TjIDs) {
+      myprt << " T" << tid << "\n";
+      auto& tj = slc.tjs[tid - 1];
+      for (unsigned short end = 0; end < 2; ++end) {
+        myprt <<"  end" <<end << " 2V" << tj.VtxID[end];
+        if (tj.VtxID[end] > 0) {
+          auto& vx2 = slc.vtxs[tj.VtxID[end] - 1];
+          myprt << " -> 3V" <<vx2.Vx3ID;
+          if (vx2.Vx3ID > 0) {
+            myprt << " ->";
+            auto& vx3 = slc.vtx3s[vx2.Vx3ID - 1];
+            for (auto vid : vx3.Vx2ID) myprt << " 2V" << vid;
+          } // vx2.Vx3ID > 0
+          else {
+            myprt << " -> no 3V";
+          }
+        } // tj.VtxID[end] > 0
+        else {
+          myprt << " -> No 2V near ";
+          auto& tp = tj.Pts[tj.EndPt[end]];
+          myprt << PrintPos(slc, tp);
+        }
+        myprt << "\n";
+      } // end
+    } // tid
+  } // PrintAssns
 
   ////////////////////////////////////////////////
+  void
+  PrintTP3Ds(detinfo::DetectorClocksData const& clockData,
+             detinfo::DetectorPropertiesData const& detProp,
+             std::string someText,
+             const TCSlice& slc,
+             const PFPStruct& pfp,
+             short printPts)
+  {
+    if (pfp.TP3Ds.empty()) return;
+    mf::LogVerbatim myprt("TC");
+    myprt<<someText<<" pfp P"<<pfp.ID<<" MVI "<<pfp.MVI;
+    for(auto tid : pfp.TjIDs) myprt<<" T"<<tid;
+    myprt<<" Flags:";
+    if(pfp.Flags[kCanSection]) myprt<<" CanSection";
+    if(pfp.Flags[kNeedsUpdate]) myprt<<" NeedsUpdate";
+    if(pfp.Flags[kStops]) myprt<<" Stops";
+    myprt<<" Algs:";
+    for(unsigned short ib = 0; ib < kAlgBitSize; ++ib) {
+      if(pfp.AlgMod[ib]) myprt<<" "<<AlgBitNames[ib];
+    } // ib
+    myprt << "\n";
+    if (!pfp.SectionFits.empty()) {
+      myprt << someText
+            << "  SFI ________Pos________   ________Dir_______ _____EndPos________ ChiDOF  NPts "
+               "NeedsUpdate?\n";
+    myprt << someText << "    " << std::fixed << std::setprecision(1);
+    auto& pos = pfp.EndPos[0];
+    myprt << std::setw(7) << pos[0] << std::setw(7) << pos[1] << std::setw(7) << pos[2];
+    myprt << " <- EndPos[0] 3V" << pfp.Vx3ID[0] << "\n";
+      for (std::size_t sfi = 0; sfi < pfp.SectionFits.size(); ++sfi) {
+        myprt << someText << std::setw(4) << sfi;
+        auto& sf = pfp.SectionFits[sfi];
+        myprt << std::fixed << std::setprecision(1);
+        unsigned short startPt = 0, endPt = 0;
+        if (SectionStartEnd(pfp, sfi, startPt, endPt)) {
+          auto& start = pfp.TP3Ds[startPt].Pos;
+          myprt << std::setw(7) << start[0] << std::setw(7) << start[1] << std::setw(7) << start[2];
+        }
+        else {
+          myprt << " Invalid";
+        }
+        myprt << std::fixed << std::setprecision(2);
+        myprt << std::setw(7) << sf.Dir[0] << std::setw(7) << sf.Dir[1] << std::setw(7)
+              << sf.Dir[2];
+        myprt << std::fixed << std::setprecision(1);
+        if (endPt < pfp.TP3Ds.size()) {
+          auto& end = pfp.TP3Ds[endPt].Pos;
+          myprt << std::setw(7) << end[0] << std::setw(7) << end[1] << std::setw(7) << end[2];
+        }
+        else {
+          myprt << " Invalid";
+        }
+        if (sf.ChiDOF > 10) {
+          myprt << std::setprecision(1);
+        } else {
+          myprt << std::setprecision(2);
+        }
+        myprt << std::setw(6) << sf.ChiDOF;
+        myprt << std::setw(6) << sf.NPts;
+        myprt << std::setw(6) << sf.NeedsUpdate;
+        myprt << "\n";
+      } // sec
+    }   // SectionFits
+    myprt << someText << "    " << std::fixed << std::setprecision(1);
+    auto& pos = pfp.EndPos[1];
+    myprt << std::setw(49) << pos[0] << std::setw(7) << pos[1] << std::setw(7) << pos[2];
+    myprt<<" <- EndPos[1] 3V" << pfp.Vx3ID[1] << "\n";
+    if (printPts < 0) {
+      // print the head if we print all points
+      myprt<<someText<<" Note: GBH = TP3D Flags. G = Good for fit, B = Bad, H = dE/dx > 80 MeV/cm\n";
+      myprt<<someText<<"  ipt SFI ________Pos________  Delta Pull  GBH   Path  along dE/dx S?    T_ipt_P:W:T\n";
+    }
+    unsigned short fromPt = 0;
+    unsigned short toPt = pfp.TP3Ds.size() - 1;
+    if (printPts >= 0) fromPt = toPt;
+    // temp kink angle for each point
+    std::vector<float> dang(pfp.TP3Ds.size(), -1);
+    for (unsigned short ipt = fromPt; ipt <= toPt; ++ipt) {
+      auto tp3d = pfp.TP3Ds[ipt];
+      myprt << someText << std::setw(4) << ipt;
+      myprt << std::setw(4) << tp3d.SFIndex;
+      myprt << std::fixed << std::setprecision(1);
+      myprt << std::setw(7) << tp3d.Pos[0] << std::setw(7) << tp3d.Pos[1] << std::setw(7)
+            << tp3d.Pos[2];
+      myprt << std::setprecision(1) << std::setw(6) << (tp3d.Pos[0] - tp3d.TPX);
+      float pull = PointPull(pfp, tp3d);
+      myprt<<std::setprecision(1)<<std::setw(6)<<pull;
+      myprt<<std::setw(3)<<tp3d.Flags[kTP3DGood]<<tp3d.Flags[kTP3DBad]<<tp3d.Flags[kTP3DHiDEdx];
+      myprt<<std::setw(7)<<std::setprecision(2)<<PosSep(tp3d.Pos, pfp.TP3Ds[0].Pos);
+      myprt<<std::setw(7)<<std::setprecision(1)<<tp3d.along;
+      myprt<<std::setw(6)<<std::setprecision(2)<<tp3d.dEdx;
+      // print SignalAtTP in each plane
+      myprt << " ";
+      for (unsigned short plane = 0; plane < slc.nPlanes; ++plane) {
+        CTP_t inCTP = EncodeCTP(pfp.TPCID.Cryostat, pfp.TPCID.TPC, plane);
+        auto tp = MakeBareTP(detProp, slc, tp3d.Pos, inCTP);
+        myprt<<SignalAtTp(tp);
+      } // plane
+      if(tp3d.TPIndex != USHRT_MAX) {
+        if(tp3d.TjID > 0) {
+          auto& tp = slc.tjs[tp3d.TjID - 1].Pts[tp3d.TPIndex];
+          myprt<<" T"<<tp3d.TjID<<"_"<<tp3d.TPIndex<<"_"<<PrintPos(slc, tp)<<" "<<TPEnvString(tp);
+        } else {
+          myprt<<" UNDEFINED";
+        }
+      } // tp3d.TPIndex != USHRT_MAX
+      myprt<<"\n";
+    } // ipt
+  }   // PrintTP3Ds
 
 } // namespace tca
 

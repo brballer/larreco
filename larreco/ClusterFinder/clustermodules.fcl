@@ -20,6 +20,10 @@ standard_tctracker:   # previously standard_trajcluster - now produces tracks
   MakeTrackSpacePoints: true
 } # standard_tctracker
 
+# backward compatibility
+standard_trajcluster: @local::standard_tctracker
+standard_trajcluster.TrajClusterAlg: @local::standard_tctrackeralg
+
 standard_blurredcluster:
 {
  module_type:              "BlurredClustering"
@@ -124,7 +128,8 @@ standard_clusterana:
  KaonKERange:              [50, 10000] # Min, max KE (MeV) for matching
  ProtKERange:              [50, 10000] # Min, max KE (MeV) for matching
  SkipCosmics:              true # do not evaluate cosmic rays
- PrintLevel:               0 # 0 = none, 1 = event summary, 2 += each MC particle, 3 += truth
+ RequireStoppingPtcl:      false # Ignore MCParticles that don't stop in a TPC
+ PrintLevel:               0 # 0 = end of job, 1 = event summary, 2 = each MC particle, 3 = all truth
 }
 
 standard_clusteringvalidation:
